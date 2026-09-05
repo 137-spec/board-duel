@@ -504,12 +504,6 @@
       toast('⚠ 普攻本轮已使用过（每轮 1 次）');
       return;
     }
-    if (eff.type === 'placeCang' && state.cang) {
-      toast('⚠ 场上已存在「苍」（一个技能只能同时存在一颗）');
-      state.aiming = null;
-      draw();
-      return;
-    }
     if (eff.type === 'attack' && !isEnemyAt(cell.x, cell.y)) {
       toast('请瞄准敌人（范围内没有敌人）');
       return;
@@ -541,8 +535,9 @@
       toast('💥「' + name + '」自身受到 ' + selfDmg + ' 伤害' + (enemyHit ? '，对 ' + nameShort(cfg.enemy) + ' 造成 ' + enemyDmg + ' 伤害' : '（范围内没有敌人）') + '，消耗 ' + cost + ' 技能点');
       checkEnd();
     } else if (eff.type === 'placeCang') {
+      var replaced = !!state.cang;
       state.cang = { x: cell.x, y: cell.y };
-      var msg = '🌀「' + name + '」在 (' + cell.x + ',' + cell.y + ') 生成「苍」！' + (cost > 0 ? '消耗 ' + cost + ' 技能点' : '');
+      var msg = '🌀「' + name + '」在 (' + cell.x + ',' + cell.y + ') 生成「苍」！' + (replaced ? '（替换掉了原来的「苍」）' : '') + (cost > 0 ? '消耗 ' + cost + ' 技能点' : '');
       if (cangArea) {
         var inside = cangArea.attack.some(function (o) { return state.enemy.x === state.cang.x + o[0] && state.enemy.y === state.cang.y + o[1]; });
         if (inside) {
