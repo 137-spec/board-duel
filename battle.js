@@ -47,6 +47,7 @@
     moveCap: moveCapOf(cfg.player), // 移动上限（随角色等级：6+Lv）
     selected: 'player',
     dirIndex: 0,         // 默认 右
+    uni: { attack: false, block: false }, // 通用技能本轮使用标记（每轮各1次）
     specialUsedRound: 0, // 特技上次使用轮（CD=1轮）
     assistUsedRound: {}, // 援助上次使用轮（CD=7轮）
     player: {
@@ -249,8 +250,14 @@
     toast('我方移动到 (' + nx + ',' + ny + ') 剩余步数 ' + Math.max(0, state.moveCap - state.movedThisRound));
   }
 
-  /* ---------- 技能（范围未制作，占位演示） ---------- */
-  function useSkill(name, extra) {
+  /* ---------- 技能 ----------
+     两类技能：
+     1）自身类（格挡/治疗自己等）→ 无范围无方向，直接生效
+     2）范围类（普攻/领域/召唤等）→ 需要范围与方向（范围尚未编写，先记录方向） */
+  function useSelfSkill(name, hint) {
+    toast('「' + name + '」对自身使用：直接生效，无需范围与方向' + (hint ? '（' + hint + '）' : ''));
+  }
+  function useRangeSkill(name, extra) {
     var dir = DIRS[state.dirIndex];
     toast('「' + name + '」技能范围尚未编写 —— 已记录释放朝向：' + dir.label + (extra ? '（' + extra + '）' : ''));
   }
@@ -292,19 +299,56 @@
       var btn = e.target.closest ? e.target.closest('.skill-btn') : null;
       if (!btn) return;
       var kind = btn.getAttribute('data-skill');
+
+      if (kind === '格挡') {
+        // 自身类：无范围无方向，直接添加护盾（每轮1次）
+        if (state.uni.block) { toast('⚠ 格挡本轮已使用过（每轮 1 次）'); return; }
+        state.uni.block = true;
+        state.player.shield = (state.player.shield || 0) + 25;
+        toast('🛡 格挡生效：为自身添加 25 点护盾（无范围，直接生效）');
+        renderSkills(); renderStatus();
+        return;
+      }
+      if (kind === '普攻') {
+        // 范围类：攻击目标（范围待定）
+        if (state.uni.attack) { toast('⚠ 普攻本轮已使用过（每轮 1 次）'); return; }
+        state.uni.attack = true;
+        useRangeSkill('普攻', '通用技能·对范围内一名敌人');
+        renderSkills();
+        return;
+      }
       if (kind === '特技') {
+        var s = SPECIALS[cfg.special];
         state.specialUsedRound = state.round;
-        useSkill(SPECIALS[cfg.special] ? SPECIALS[cfg.special].name : '特技', '特技释放（消耗奥义点）');
+        if (s && /自[己身]/.test(s.raw)) {
+          useSelfSkill(s.name, '消耗奥义点，对自身生效');
+        } else {
+          useRangeSkill(s ? s.name : '特技', '特技释放');
+        }
         renderSkills(); renderStatus();
-      } else if (kind === '援助') {
+        return;
+      }
+      if (kind === '援助') {
         var key = btn.getAttribute('data-key');
+        var a = ASSISTS[key];
         state.assistUsedRound[key] = state.round;
-        useSkill(ASSISTS[key] ? ASSISTS[key].name : key, '援助释放');
+        if (a && /自[己身]/.test(a.raw)) {
+          useSelfSkill(a.name, '援助释放');
+        } else {
+          useRangeSkill(a ? a.name : key, '援助释放');
+        }
         renderSkills(); renderStatus();
-      } else if (kind === 'char') {
-        useSkill(btn.getAttribute('data-name'));
-      } else {
-        useSkill(kind, '通用技能');
+        return;
+      }
+      if (kind === 'char') {
+        var name = btn.getAttribute('data-name');
+        var detail = '';
+        var own = charSkillList(cfg.player);
+        for (var i = 0; i < own.length; i++) {
+          if (own[i].name === name) { detail = own[i].detail || ''; break; }
+        }
+        if (/自[己身]/.test(detail)) useSelfSkill(name);
+        else useRangeSkill(name);
       }
     });
   }
@@ -325,6 +369,7 @@
     state.ap = 1;
     state.sp = Math.min(3, state.sp + 1);
     state.movedThisRound = 0;
+    state.uni = { attack: false, block: false }; // 通用技能每轮重置
     document.getElementById('round-info').textContent = '第 ' + state.round + ' 轮';
     draw();
     renderStatus();
