@@ -29,6 +29,12 @@
   }
   if (!cfg.player || !cfg.enemy) { window.location.href = 'game.html'; return; }
 
+  // 每轮可移动格数 = 6 + 角色等级（等级最高按5级封顶；0级角色=6格）
+  function moveCapOf(key) {
+    var c = CHARACTERS[key];
+    var lv = (c && c.level) || 0;
+    return 6 + Math.min(lv, 5);
+  }
   /* ---------- 对局状态 ---------- */
   var mapData = GAME_MAPS[cfg.map] || GAME_MAPS['50x50'];
   var W = mapData[0].length, H = mapData.length;
@@ -37,8 +43,8 @@
     ap: 1,               // 行动点
     sp: 1,               // 技能点
     op: 2,               // 奥义点（开局2）
-    movedThisRound: 0,   // 本轮已移动格数（1行动点=6格）
-    moveCap: 6,          // 0级角色基础6格（角色等级这里先简化）
+    movedThisRound: 0,   // 本轮已移动格数
+    moveCap: moveCapOf(cfg.player), // 移动上限（随角色等级：6+Lv）
     selected: 'player',
     dirIndex: 0,         // 默认 右
     specialUsedRound: 0, // 特技上次使用轮（CD=1轮）
@@ -194,6 +200,7 @@
     if (state.selected === 'player') {
       html += '<div class="stat-line"><span class="label">行动点</span><span class="dots">'
         + (state.ap > 0 ? '●' : '○') + '（本轮剩余移动步数 ' + Math.max(0, state.moveCap - state.movedThisRound) + '/' + state.moveCap + '）</span></div>';
+      html += '<div class="stat-line"><span class="label">移动上限</span><b>6+等级' + ((CHARACTERS[cfg.player] && CHARACTERS[cfg.player].level) || 0) + ' = ' + state.moveCap + ' 格</b></div>';
       html += '<div class="stat-line"><span class="label">技能点</span><span class="dots">'
         + '●'.repeat(state.sp) + '○'.repeat(3 - state.sp) + ' ' + state.sp + '/3</span></div>';
       html += '<div class="stat-line"><span class="label">奥义点</span><span class="dots">'
