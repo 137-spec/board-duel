@@ -152,6 +152,7 @@
     dirIndex: 0,
     uni: { attack: false, block: false },  // 通用技能每轮各1次
     infinity: 0,                    // 「无限」状态剩余轮数（无下限术式·敌方攻击无法命中/无法靠近）
+    domExtend: false,               // 「领域展延」·本轮受伤-30%·期间无法使用其余技能
     usedSkill: false,               // 使用技能后本轮不可再移动/放技能
     specialUsedRound: 0,
     assistUsedRound: {},
@@ -242,8 +243,8 @@
   function isEnemyAt(x, y) { return state.enemy.x === x && state.enemy.y === y; }
   function isPlayerAt(x, y) { return state.player.x === x && state.player.y === y; }
   function applyDamage(u, amount) {
+    var dmg = Math.round(amount); // 规则：伤害存在小数时四舍五入保留个位数
     var shield = u.shield || 0;
-    var dmg = amount;
     if (shield > 0) {
       var absorb = Math.min(shield, dmg);
       u.shield = shield - absorb;
@@ -476,6 +477,7 @@
     if (state.selected === 'player') {
       if (state.usedSkill) chips.push('🚫 已用技能·不可移动');
       if (state.infinity > 0) chips.push('🌀 无限（剩 ' + state.infinity + ' 轮）·敌方攻击无法命中/无法靠近');
+      if (state.domExtend) chips.push('🔰 领域展延·受伤-30%·无法使用其余技能');
       if (state.maha) {
         var adText = [];
         Object.keys(state.maha.adapts).forEach(function (k) {
@@ -696,6 +698,11 @@
       if (state.turn !== 'player') { toast('⏳ 现在是敌方回合，请稍候'); return; }
       var kind = btn.getAttribute('data-skill');
 
+      if (state.domExtend) {
+        toast('🔰 领域展延生效中：无法使用其余技能（持续至本轮结束）');
+        return;
+      }
+
       if (kind === '格挡') {
         if (state.uni.block) { toast('⚠ 格挡本轮已使用过（每轮 1 次）'); return; }
         state.uni.block = true;
@@ -767,6 +774,15 @@
             state.sp -= scost;
             state.usedSkill = true;
             toast('🌀「苍（瞬）」！已传送到苍的位置，苍随之消失' + (scost > 0 ? '，消耗 ' + scost + ' 技能点' : ''));
+            draw(); renderStatus();
+            return;
+          }
+          // 领域展延：受伤-30%·无视无限·持续至本轮结束·不能使用其余技能
+          if (name === '领域展延') {
+            state.sp -= scost;
+            state.domExtend = true;
+            state.usedSkill = true;
+            toast('🔰「领域展延」：本轮受到伤害 -30%，无视「无限」效果，期间无法使用其余技能，持续至本轮结束');
             draw(); renderStatus();
             return;
           }
@@ -922,8 +938,16 @@
             // 「无限」：敌方攻击无法命中
             toast('🛡「无限」使 ' + nameShort(cfg.enemy) + ' 的攻击无法命中！');
           } else {
-            var dmg = applyDamage(state.player, 25);
-            toast('⚔️ ' + nameShort(cfg.enemy) + ' 对你普攻：造成 ' + dmg + ' 点伤害' + (state.player.hp <= 0 ? '' : '（护盾吸收剩余值已结算）'));
+            var baseDmg = 25;
+            if (state.domExtend) {
+              // 领域展延：受到伤害减少30%（四舍五入）
+              var reduced = Math.round(baseDmg * 0.7);
+              applyDamage(state.player, reduced);
+              toast('🔰 领域展延减伤30%：' + nameShort(cfg.enemy) + ' 对你造成 ' + reduced + ' 点伤害');
+            } else {
+              var dmg = applyDamage(state.player, baseDmg);
+              toast('⚔️ ' + nameShort(cfg.enemy) + ' 对你普攻：造成 ' + dmg + ' 点伤害' + (state.player.hp <= 0 ? '' : '（护盾吸收剩余值已结算）'));
+            }
           }
         }
         renderStatus();
@@ -995,6 +1019,7 @@
       state.infinity--;
       if (state.infinity <= 0) toast('⌛「无限」状态消失');
     }
+    state.domExtend = false; // 领域展延持续至本轮结束
     state.turn = 'player';
     document.getElementById('round-info').textContent = '第 ' + state.round + ' 轮';
     draw();
