@@ -64,8 +64,7 @@
 
   /* ---------- 范围解析 ----------
      返回：{own:[x,y], cells:[[dx,dy],...]} relative to own */
-  function parseRange(key) {
-    var g = SKILL_RANGES[key];
+  function parseRangeGrid(g) {
     if (!g || !g.length) return null;
     var ones = [], twos = [], threes = [];
     for (var y = 0; y < g.length; y++) {
@@ -131,7 +130,17 @@
 
   var rangeCache = {};
   function getRange(key) {
-    if (!(key in rangeCache)) rangeCache[key] = parseRange(key);
+    if (!(key in rangeCache)) {
+      var g = SKILL_RANGES[key];
+      if (!g) {
+        // 兼容文件名带后缀的情况（如“普攻范围 - 副本 (2)”仍视为“普攻范围”）
+        var ks = Object.keys(SKILL_RANGES);
+        for (var i = 0; i < ks.length; i++) {
+          if (ks[i].indexOf(key) === 0) { g = SKILL_RANGES[ks[i]]; break; }
+        }
+      }
+      rangeCache[key] = g ? parseRangeGrid(g) : null;
+    }
     return rangeCache[key];
   }
   var cangArea = parseCangArea(CANG_AREA_KEY);
@@ -155,6 +164,7 @@
     turn: 'player',
     gameOver: false,
     enemyAttractNoted: false,
+    maha: null,                     // 场上魔虚罗（援助召唤）
     aiming: null,                   // {name, cells:[{x,y}]}
     cang: null,                     // 场上“苍” {x,y}
     player: {
@@ -291,6 +301,10 @@
       mmCtx.fillStyle = '#2b1a6b';
       mmCtx.fillRect(state.cang.x * MM, state.cang.y * MM, MM, MM);
     }
+    if (state.maha) {
+      mmCtx.fillStyle = '#d4a017';
+      mmCtx.fillRect(state.maha.x * MM, state.maha.y * MM, MM, MM);
+    }
     mmCtx.fillStyle = '#ff5252';
     mmCtx.fillRect(state.enemy.x * MM, state.enemy.y * MM, MM, MM);
     mmCtx.fillStyle = '#3f8cff';
@@ -376,7 +390,25 @@
     drawCang();
     drawUnit(state.player, '#3f8cff', '#eaf4ff');
     drawUnit(state.enemy, '#ff5252', '#ffecec');
+    drawMaha();
     drawMinimap();
+  }
+  function drawMaha() {
+    if (!state.maha) return;
+    var cx = (state.maha.x + 0.5) * CELL - camX, cy = (state.maha.y + 0.5) * CELL - camY;
+    if (cx < -24 || cy < -24 || cx > canvas.width + 24 || cy > canvas.height + 24) return;
+    ctx.beginPath();
+    ctx.arc(cx, cy, CELL * 0.42, 0, Math.PI * 2);
+    ctx.fillStyle = '#d4a017'; // 金色=魔虚罗
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.min(15, Math.round(CELL * 0.52)) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('魔', cx, cy);
   }
   function drawCang() {
     if (!state.cang) return;
@@ -449,6 +481,14 @@
     if (state.cang) chips.push('🌀 场上有「苍」');
     if (state.selected === 'player') {
       if (state.usedSkill) chips.push('🚫 已用技能·不可移动');
+      if (state.maha) {
+        var adText = [];
+        Object.keys(state.maha.adapts).forEach(function (k) {
+          var ad = state.maha.adapts[k];
+          adText.push(ad.done ? ('已适应「' + k + '」') : ('适应中「' + k + '」剩' + ad.left + '轮'));
+        });
+        chips.push('🌀 魔虚罗 ' + state.maha.hp + '/600（剩' + state.maha.roundsLeft + '轮' + (adText.length ? ' · ' + adText.join('；') : '') + '）');
+      }
       if (state.specialUsedRound > 0 && state.round - state.specialUsedRound < 2) chips.push('⏳ 特技冷却中');
       (cfg.assists || []).forEach(function (k) {
         var last = state.assistUsedRound[k] || 0;
@@ -690,7 +730,18 @@
         var a = ASSISTS[key];
         // 援助不消耗技能点（援助体系独立，冷却固定7轮）
         state.assistUsedRound[key] = state.round;
-        if (a && /自[己身]/.test(a.raw)) {
+        // 援助魔虚罗：真实召唤（600血 · 3轮 · AI操控）
+      if (a && /魔虚罗/.test(a.name)) {
+        if (state.maha) { toast('⚠ 魔虚罗已在场上，无需再召唤'); return; }
+        var dir = DIRS[state.dirIndex];
+        var px = state.player.x + dir.dx, py = state.player.y + dir.dy;
+        if (!inBounds(px, py) || mapData[py][px] !== 0) { px = state.player.x; py = state.player.y; }
+        state.maha = { x: px, y: py, hp: 600, roundsLeft: 3, adapts: {} };
+        toast('🛡 援助「魔虚罗」降临！600血 · 存在3轮 · 由AI操控（适应系统启动）');
+        draw(); renderStatus(); renderSkills();
+        return;
+      }
+      if (a && /自[己身]/.test(a.raw)) {
           useSelfSkill(a.name, '援助释放');
         } else {
           useRangeSkill(a ? a.name : key, '援助释放');
@@ -744,6 +795,80 @@
     });
   }
 
+  /* ---------- 魔虚罗（援助召唤体）AI + 适应机制 ---------- */
+  function mahaInRange() {
+    return Math.abs(state.enemy.x - state.maha.x) <= 1 && Math.abs(state.enemy.y - state.maha.y) <= 1;
+  }
+  function mahaStep() {
+    var e = state.maha, p = state.enemy;
+    var dx = p.x - e.x, dy = p.y - e.y;
+    var tries = [];
+    if (dx !== 0) tries.push([dx > 0 ? 1 : -1, 0]);
+    if (dy !== 0) tries.push([0, dy > 0 ? 1 : -1]);
+    for (var i = 0; i < tries.length; i++) {
+      var nx = e.x + tries[i][0], ny = e.y + tries[i][1];
+      if (inBounds(nx, ny) && mapData[ny][nx] === 0) { e.x = nx; e.y = ny; return true; }
+    }
+    return false;
+  }
+  function mahaAct() {
+    if (!state.maha || state.gameOver) return;
+    for (var i = 0; i < 8; i++) { // 最多移动8格
+      if (mahaInRange()) break;
+      if (!mahaStep()) break;
+    }
+    draw();
+    if (mahaInRange()) {
+      var d = applyDamage(state.enemy, 150);
+      earnOp();
+      toast('🌀 魔虚罗攻击 ' + nameShort(cfg.enemy) + '：造成 ' + d + ' 点正向能量伤害');
+      checkEnd();
+    }
+  }
+  // 魔虚罗被攻击：按技能适应难度登记/推进；已适应的技能伤害为0
+  function hitMaha(skillName, adaptDiff, dmg) {
+    var m = state.maha;
+    if (!m) return 0;
+    var ad = m.adapts[skillName];
+    if (ad && ad.done) return 0; // 已适应：不再造成伤害
+    if (adaptDiff && (!ad || !ad.done)) {
+      if (!ad) m.adapts[skillName] = { left: adaptDiff, diff: adaptDiff };
+      // 重复被同技能命中：不重置适应轮数
+    }
+    m.hp = Math.max(0, m.hp - dmg);
+    if (m.hp <= 0) {
+      state.maha = null;
+      toast('💀 魔虚罗被击败！');
+    }
+    return dmg;
+  }
+  function enemyInMahaRange() {
+    if (!state.maha) return false;
+    if (state.enemy.x === state.maha.x && state.enemy.y === state.maha.y) return true;
+    var info = getRange('普攻范围');
+    if (!info) return Math.abs(state.enemy.x - state.maha.x) + Math.abs(state.enemy.y - state.maha.y) <= 1;
+    return info.cells.some(function (o) {
+      return state.maha.x === state.enemy.x + o[0] && state.maha.y === state.enemy.y + o[1];
+    });
+  }
+  function enemyAttackTarget() {
+    if (state.maha && enemyInMahaRange()) return 'maha';
+    if (enemyInPlayerRange()) return 'player';
+    return null;
+  }
+  function enemyAttacksMaha() {
+    var isSukuna = /宿傩/.test(displayName(cfg.enemy));
+    if (isSukuna) {
+      // 宿傩用「解」（适应难度2 · 10×20指=200伤害）演示适应
+      var d = hitMaha('解', 2, 200);
+      toast('⚔️ ' + nameShort(cfg.enemy) + ' 使用「解」攻击魔虚罗：' + d + ' 点伤害' + (d === 0 ? '（魔虚罗已适应「解」！）' : ''));
+    } else {
+      var d2 = hitMaha('普攻', null, 25);
+      toast('⚔️ ' + nameShort(cfg.enemy) + ' 普攻魔虚罗：' + d2 + ' 点伤害');
+    }
+    renderStatus();
+  }
+
   /* ---------- 敌方 AI ---------- */
   function enemyInPlayerRange() {
     var info = getRange('普攻范围');
@@ -774,15 +899,22 @@
     draw();
     renderStatus();
     toast('⏳ ' + nameShort(cfg.enemy) + ' 开始行动…');
+    mahaAct(); // 玩家召唤的魔虚罗先行（AI操控）
+    if (state.gameOver) return;
     var cap = moveCapOf(cfg.enemy);
     var steps = 0;
     var iv = setInterval(function () {
       if (state.gameOver) { clearInterval(iv); return; }
-      if (enemyInPlayerRange()) {
+      var target = enemyAttackTarget();
+      if (target) {
         clearInterval(iv);
-        // 普攻
-        var dmg = applyDamage(state.player, 25);
-        toast('⚔️ ' + nameShort(cfg.enemy) + ' 对你普攻：造成 ' + dmg + ' 点伤害' + (state.player.hp <= 0 ? '' : '（护盾吸收剩余值已结算）'));
+        if (target === 'maha') {
+          enemyAttacksMaha();
+        } else {
+          // 普攻
+          var dmg = applyDamage(state.player, 25);
+          toast('⚔️ ' + nameShort(cfg.enemy) + ' 对你普攻：造成 ' + dmg + ' 点伤害' + (state.player.hp <= 0 ? '' : '（护盾吸收剩余值已结算）'));
+        }
         renderStatus();
         checkEnd();
         if (!state.gameOver) setTimeout(endEnemyTurn, 900);
@@ -825,6 +957,22 @@
       }
     }
     if (state.gameOver) return;
+    // 魔虚罗：适应推进 + 每轮回血150 + 3轮时限
+    if (state.maha) {
+      Object.keys(state.maha.adapts).forEach(function (k) {
+        var ad = state.maha.adapts[k];
+        if (!ad.done) {
+          ad.left--;
+          if (ad.left <= 0) { ad.done = true; toast('🧠 魔虚罗已适应「' + k + '」！该技能不再造成伤害'); }
+        }
+      });
+      state.maha.hp = Math.min(600, state.maha.hp + 150);
+      state.maha.roundsLeft--;
+      if (state.maha.roundsLeft <= 0) {
+        state.maha = null;
+        toast('⏳ 援助魔虚罗到了时限（3轮），消失');
+      }
+    }
     state.round++;
     state.ap = 1;
     state.sp = Math.min(3, state.sp + 1);

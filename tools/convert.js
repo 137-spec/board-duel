@@ -67,13 +67,13 @@ function parseCharacter(raw) {
     if (section === 'passive') passives.push(body);
     else if (section === 'skill') skills.push(body);
   }
-  // 技能名：取第一个中文冒号前的部分（无冒号则整行）
+  // 技能名：取第一个中文冒号前的部分（无冒号则整行）；适应难度标记（适应难度：N）
   const skillDefs = skills.map((l) => {
     const idx = l.indexOf('：');
-    if (idx >= 0) {
-      return { name: l.slice(0, idx).trim(), detail: l.slice(idx + 1).trim() };
-    }
-    return { name: l, detail: '' };
+    const name = idx >= 0 ? l.slice(0, idx).trim() : l;
+    const detail = idx >= 0 ? l.slice(idx + 1).trim() : '';
+    const adM = /适应难度\s*[:：]\s*(\d+)/.exec(l);
+    return { name, detail, adapt: adM ? parseInt(adM[1], 10) : null };
   });
   return {
     kind: 'character',
