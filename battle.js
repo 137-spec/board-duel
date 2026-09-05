@@ -451,7 +451,7 @@
     var nx = u.x + dx, ny = u.y + dy;
     if (!inBounds(nx, ny)) { toast('⚠ 到达地图边界'); return; }
     if (mapData[ny][nx] !== 0) { toast('⚠ 该格有障碍物'); return; }
-    if (isEnemyAt(nx, ny)) { toast('⚠ 敌方单位挡住去路'); return; }
+    // 允许与敌方同格、与苍重叠（战棋可堆叠规则）
     if (state.movedThisRound >= state.moveCap || state.ap <= 0) { toast('⚠ 本轮步数已用完'); return; }
     u.x = nx; u.y = ny;
     state.movedThisRound++;
@@ -480,6 +480,8 @@
       var x = state.player.x + o[0], y = state.player.y + o[1];
       if (inBounds(x, y)) cells.push({ x: x, y: y });
     });
+    // 与敌方同格时，本格也算可攻击目标（堆叠规则）
+    if (isEnemyAt(state.player.x, state.player.y)) cells.push({ x: state.player.x, y: state.player.y });
     state.aiming = { name: name, cells: cells, eff: eff };
     draw();
     toast('「' + name + '」瞄准中：点击高亮格子选择目标/位置（点空白处取消）');
@@ -660,6 +662,18 @@
           // 自身类也消耗技能点（按设定）
           var scost = costFor(name);
           if (state.sp < scost) { toast('⚠ 技能点不足（「' + name + '」需要 ' + scost + ' 点）'); return; }
+          // 苍（瞬）：传送到苍的位置并使苍消失
+          if (name === '苍（瞬）') {
+            if (!state.cang) { toast('⚠ 场上没有「苍」，无法瞬移'); return; }
+            state.player.x = state.cang.x;
+            state.player.y = state.cang.y;
+            state.cang = null;
+            state.sp -= scost;
+            state.usedSkill = true;
+            toast('🌀「苍（瞬）」！已传送到苍的位置，苍随之消失' + (scost > 0 ? '，消耗 ' + scost + ' 技能点' : ''));
+            draw(); renderStatus();
+            return;
+          }
           state.sp -= scost;
           state.usedSkill = true;
           useSelfSkill(name, '消耗 ' + scost + ' 技能点' + (NO_RANGE_SKILLS[name] ? '；目标已确定（如传送至苍的位置）' : ''));
@@ -683,6 +697,8 @@
   /* ---------- 敌方 AI ---------- */
   function enemyInPlayerRange() {
     var info = getRange('普攻范围');
+    // 同格也算命中（角色可堆叠）
+    if (state.player.x === state.enemy.x && state.player.y === state.enemy.y) return true;
     if (!info) return Math.abs(state.player.x - state.enemy.x) + Math.abs(state.player.y - state.enemy.y) <= 1;
     return info.cells.some(function (o) {
       return state.player.x === state.enemy.x + o[0] && state.player.y === state.enemy.y + o[1];
@@ -698,7 +714,7 @@
     if (dy !== 0) tries.push([0, dy > 0 ? 1 : -1]);
     for (var i = 0; i < tries.length; i++) {
       var nx = e.x + tries[i][0], ny = e.y + tries[i][1];
-      if (inBounds(nx, ny) && mapData[ny][nx] === 0 && !isPlayerAt(nx, ny)) { e.x = nx; e.y = ny; moved = true; break; }
+      if (inBounds(nx, ny) && mapData[ny][nx] === 0) { e.x = nx; e.y = ny; moved = true; break; } // 允许与玩家同格
     }
     return moved;
   }
