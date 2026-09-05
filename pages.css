@@ -33,6 +33,15 @@
 .option-card .big { font-size: 1.25rem; font-weight: 800; color: var(--text); }
 .option-card .sub { font-size: .88rem; color: var(--muted); }
 
+/* 地图选择卡片：白底黑线（高对比） */
+.map-card {
+  background: #fdfdfd;
+  border: 2px solid #111;
+}
+.map-card .big { color: #111; }
+.map-card .sub { color: #555; }
+.map-card:hover { border-color: #111; box-shadow: 0 8px 24px rgba(255, 255, 255, .25); }
+
 .detail-box {
   background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
   border: 1px solid rgba(255,255,255,.14);

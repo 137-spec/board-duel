@@ -28,7 +28,7 @@
   MAP_OPTIONS.forEach(function (key) {
     var card = document.createElement('div');
     var size = key.split('x');
-    card.className = 'option-card';
+    card.className = 'option-card map-card';
     card.innerHTML = '<span class="big">' + size[0] + ' × ' + size[1] + '</span>' +
       '<span class="sub">' + (GAME_MAPS[key] ? GAME_MAPS[key].length + ' 行 × ' + GAME_MAPS[key][0].length + ' 列' : '数据缺失') + '</span>';
     card.addEventListener('click', function () {

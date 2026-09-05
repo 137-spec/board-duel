@@ -117,7 +117,8 @@
   }
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#221640';
+    // 白底（高对比棋盘风）
+    ctx.fillStyle = '#f4f4f4';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     // 只画视野内的格子（大图也流畅）
     var x0 = Math.max(0, Math.floor(camX / CELL));
@@ -127,14 +128,14 @@
     for (var y = y0; y <= y1; y++) {
       for (var x = x0; x <= x1; x++) {
         var v = mapData[y][x];
-        if (v !== 0) { // 障碍物底色（后续读障碍）
-          ctx.fillStyle = '#4a2b12';
+        if (v !== 0) { // 障碍物（后续读障碍）
+          ctx.fillStyle = '#8a5a26';
           ctx.fillRect(x * CELL - camX + 1, y * CELL - camY + 1, CELL - 2, CELL - 2);
         }
       }
     }
-    // 网格线
-    ctx.strokeStyle = 'rgba(255,255,255,.08)';
+    // 黑网格线（增强对比）
+    ctx.strokeStyle = 'rgba(0,0,0,.45)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (var i = x0; i <= x1 + 1; i++) {
@@ -169,8 +170,8 @@
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = fill;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,.5)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
     ctx.stroke();
     ctx.fillStyle = textColor;
     ctx.font = 'bold ' + Math.min(15, Math.round(CELL * 0.52)) + 'px sans-serif';
