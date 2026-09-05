@@ -94,7 +94,8 @@
     });
     return { own: own, cells: cells };
   }
-  /* 苍特殊范围：1=攻击 2=吸附；1与中心0也算吸附；中心0也算攻击 */
+  /* 苍特殊范围：1=攻击 2=吸附；1与中心0也算吸附；中心0也算攻击
+     中心定位：取攻击区(1)的包围盒中点（图案对称，比扫内部0更可靠） */
   function parseCangArea(key) {
     var g = SKILL_RANGES[key];
     if (!g || !g.length) return null;
@@ -107,21 +108,22 @@
       }
     }
     if (!ones.length && !twos.length) return null;
-    var xs = ones.concat(twos).map(function (c) { return c[0]; });
-    var ys = ones.concat(twos).map(function (c) { return c[1]; });
-    var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
-    var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
-    var center = null;
-    for (var y2 = minY; y2 <= maxY; y2++) {
-      for (var x2 = minX; x2 <= maxX; x2++) {
-        if (g[y2][x2] === 0) { center = [x2, y2]; break; }
-      }
-      if (center) break;
+    var xs1 = ones.map(function (c) { return c[0]; });
+    var ys1 = ones.map(function (c) { return c[1]; });
+    var centerX, centerY;
+    if (ones.length) {
+      centerX = Math.round((Math.min.apply(null, xs1) + Math.max.apply(null, xs1)) / 2);
+      centerY = Math.round((Math.min.apply(null, ys1) + Math.max.apply(null, ys1)) / 2);
+    } else {
+      var xs2 = twos.map(function (c) { return c[0]; });
+      var ys2 = twos.map(function (c) { return c[1]; });
+      centerX = Math.round((Math.min.apply(null, xs2) + Math.max.apply(null, xs2)) / 2);
+      centerY = Math.round((Math.min.apply(null, ys2) + Math.max.apply(null, ys2)) / 2);
     }
-    if (!center) return null;
+    var center = [centerX, centerY];
     function off(c) { return [c[0] - center[0], c[1] - center[1]]; }
-    var attack = [off(center)];
-    var attract = [off(center)];
+    var attack = [off(center)];   // 中心0也是攻击范围
+    var attract = [off(center)];  // 中心0也是吸附范围
     ones.forEach(function (c) { attack.push(off(c)); attract.push(off(c)); });
     twos.forEach(function (c) { attract.push(off(c)); });
     return { center: center, attack: attack, attract: attract };
@@ -152,6 +154,7 @@
     assistUsedRound: {},
     turn: 'player',
     gameOver: false,
+    enemyAttractNoted: false,
     aiming: null,                   // {name, cells:[{x,y}]}
     cang: null,                     // 场上“苍” {x,y}
     player: {
@@ -666,8 +669,16 @@
         return;
       }
       if (steps < cap) {
+        // 「苍」吸附范围：敌方每移动一格额外消耗1格移动力
+        var inAttract = state.cang && cangArea && cangArea.attract.some(function (o) {
+          return state.enemy.x === state.cang.x + o[0] && state.enemy.y === state.cang.y + o[1];
+        });
+        if (inAttract && !state.enemyAttractNoted) {
+          state.enemyAttractNoted = true;
+          toast('🌀 敌方陷入「苍」吸附范围：每移动一格额外消耗 1 格移动力');
+        }
         var moved = enemyStep();
-        steps++;
+        steps += (inAttract ? 2 : 1);
         draw();
         if (!moved) { // 走不动了 → 结束
           clearInterval(iv);
@@ -699,6 +710,7 @@
     state.movedThisRound = 0;
     state.uni = { attack: false, block: false };
     state.usedSkill = false;
+    state.enemyAttractNoted = false;
     state.turn = 'player';
     document.getElementById('round-info').textContent = '第 ' + state.round + ' 轮';
     draw();
