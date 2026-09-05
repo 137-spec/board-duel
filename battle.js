@@ -688,15 +688,12 @@
       if (kind === '援助') {
         var key = btn.getAttribute('data-key');
         var a = ASSISTS[key];
-        // 援助按文案同样消耗技能点（如魔虚罗 3 点）
-        var acost = a ? spCostOf(a.raw) : 0;
-        if (state.sp < acost) { toast('⚠ 技能点不足（「' + (a ? a.name : key) + '」需要 ' + acost + ' 点）'); return; }
-        state.sp -= acost;
+        // 援助不消耗技能点（援助体系独立，冷却固定7轮）
         state.assistUsedRound[key] = state.round;
         if (a && /自[己身]/.test(a.raw)) {
-          useSelfSkill(a.name, '援助释放·消耗 ' + acost + ' 技能点');
+          useSelfSkill(a.name, '援助释放');
         } else {
-          useRangeSkill(a ? a.name : key, '援助释放·消耗 ' + acost + ' 技能点');
+          useRangeSkill(a ? a.name : key, '援助释放');
         }
         renderSkills(); renderStatus();
         return;
