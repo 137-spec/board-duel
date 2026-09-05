@@ -88,6 +88,18 @@
     var base = nameShort(key);
     return REP_CHARS[base] || base.charAt(0);
   }
+  // 无范围/无方向技能登记：
+  // 1) 描述含"自己/自身" → 自动识别为自身类
+  // 2) 传送到已有对象/目标已确定（如 苍（瞬）传送到苍的位置）→ 在此登记
+  var NO_RANGE_SKILLS = { '苍（瞬）': true };
+  function skillIsSelf(name, detail) {
+    if (NO_RANGE_SKILLS[name]) return true;
+    var d = detail || '';
+    // 描述里有范围/格子/目标/敌人的 → 属于范围类（即使是半个自身效果，如赫自爆）
+    if (/范围|格子|目标|敌人/.test(d)) return false;
+    return /自[己身]/.test(d);
+  }
+
   function charSkillList(key) {
     var c = CHARACTERS[key];
     if (!c || c.kind === 'empty') return [];
@@ -290,8 +302,10 @@
     if (own.length) {
       html += '<div class="skill-group-title">角色技能（' + nameShort(cfg.player) + '）</div>';
       own.forEach(function (sk) {
+        var self = skillIsSelf(sk.name, sk.detail);
+        var badge = self ? '无范围' : '范围待定';
         html += '<button class="skill-btn" data-skill="char" data-name="' + sk.name.replace(/"/g, '&quot;') + '">' +
-          sk.name + '<span class="cd">范围待定</span></button>';
+          sk.name + '<span class="cd">' + badge + '</span></button>';
       });
     }
     list.innerHTML = html;
@@ -347,8 +361,11 @@
         for (var i = 0; i < own.length; i++) {
           if (own[i].name === name) { detail = own[i].detail || ''; break; }
         }
-        if (/自[己身]/.test(detail)) useSelfSkill(name);
-        else useRangeSkill(name);
+        if (skillIsSelf(name, detail)) {
+          useSelfSkill(name, skillIsSelf(name, detail) && NO_RANGE_SKILLS[name] ? '目标已确定（如传送至苍的位置）' : '');
+        } else {
+          useRangeSkill(name);
+        }
       }
     });
   }
