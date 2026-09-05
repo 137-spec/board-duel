@@ -10,7 +10,7 @@
 <body class="battle-page">
   <div id="battle-top">
     <a class="menu-btn small" href="index.html">🏠 返回主菜单</a>
-    <span class="round-info" id="round-info">第 1 轮<span class="version-tag" id="version-tag">v4</span></span>
+    <span class="round-info" id="round-info">第 1 轮<span class="version-tag" id="version-tag">v5</span></span>
     <div style="display:flex;gap:8px;">
       <button class="menu-btn small" id="btn-toggle-left">🕹 状态/移动面板</button>
       <button class="menu-btn small" id="btn-toggle-right">⚡ 技能面板</button>
@@ -61,7 +61,7 @@
       <div class="panel" style="flex:1;">
         <h3>⚡ 技能区块</h3>
         <div class="skill-list" id="skill-list"></div>
-        <p class="muted" style="margin-top:10px;font-size:.8rem;">注：技能使用不消耗技能点（技能点用于吟唱/特殊机制）；格挡等"对自身"技能直接生效；普攻等范围技能按范围图高亮释放。</p>
+        <p class="muted" style="margin-top:10px;font-size:.8rem;">注：技能按角色设定消耗技能点（六眼被动→消耗变为1）；用技能后本轮不能移动，但可继续释放其它技能；普攻/格挡每轮各1次。</p>
       </div>
     </section>
   </main>

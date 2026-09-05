@@ -202,6 +202,39 @@
     });
   }
   function inBounds(x, y) { return x >= 0 && y >= 0 && x < W && y < H; }
+
+  /* ---------- 技能点消耗（按角色设定解析；六眼被动→消耗变为1） ---------- */
+  var CN_NUM = { '一': 1, '两': 2, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 };
+  function spCostOf(text) {
+    if (!text) return 0;
+    // 匹配“消耗两个技能点/消耗三点技能点”这类写法（个/点均可）
+    var m = /消耗([一两二三四五六七八九十\d]+)[个点]?技能点/.exec(text);
+    if (!m) return 0;
+    var s = m[1];
+    if (/^\d+$/.test(s)) return parseInt(s, 10);
+    var total = 0;
+    for (var i = 0; i < s.length; i++) total += (CN_NUM[s.charAt(i)] || 0);
+    return total;
+  }
+  function hasSixEyes(key) {
+    var c = CHARACTERS[key];
+    return c && c.passives && c.passives.some(function (p) { return /六眼/.test(p); });
+  }
+  // 一个技能的最终技能点消耗：0级规则——若技能本身有消耗且角色有六眼 → 变为1
+  function costFor(name) {
+    if (name === '普攻' || name === '格挡') return 0;
+    if (name === '特技') return 0; // 特技消耗奥义点
+    var own = charSkillList(cfg.player);
+    for (var i = 0; i < own.length; i++) {
+      if (own[i].name === name) {
+        var c = spCostOf(own[i].detail || '');
+        if (c > 0 && hasSixEyes(cfg.player)) return 1;
+        return c;
+      }
+    }
+    return 0;
+  }
+
   function isEnemyAt(x, y) { return state.enemy.x === x && state.enemy.y === y; }
   function isPlayerAt(x, y) { return state.player.x === x && state.player.y === y; }
   function applyDamage(u, amount) {
@@ -461,35 +494,56 @@
     if (!aim) return;
     var eff = aim.eff;
     var name = aim.name;
+
+    // 前置校验（不满足则保持瞄准并返回）
+    if (eff.needOp && state.op < eff.needOp) {
+      toast('⚠ 「' + name + '」奥义点不足（需要 ' + eff.needOp + '，当前 ' + state.op + '）');
+      return;
+    }
+    if (name === '普攻' && state.uni.attack) {
+      toast('⚠ 普攻本轮已使用过（每轮 1 次）');
+      return;
+    }
+    if (eff.type === 'placeCang' && state.cang) {
+      toast('⚠ 场上已存在「苍」（一个技能只能同时存在一颗）');
+      state.aiming = null;
+      draw();
+      return;
+    }
+    if (eff.type === 'attack' && !isEnemyAt(cell.x, cell.y)) {
+      toast('请瞄准敌人（范围内没有敌人）');
+      return;
+    }
+
+    // 技能点结算（按角色设定；六眼→1）
+    var cost = costFor(name);
+    if (state.sp < cost) {
+      toast('⚠ 技能点不足（「' + name + '」需要 ' + cost + ' 点，当前 ' + state.sp + '）');
+      return;
+    }
+    state.sp -= cost;
+
     state.aiming = null;
-    state.usedSkill = true;
+    state.usedSkill = true; // 用技能后本轮不可再移动（但可继续放技能）
+    if (name === '普攻') state.uni.attack = true;
 
     if (eff.type === 'attack') {
-      if (eff.needOp && state.op < eff.needOp) {
-        toast('⚠ 「' + name + '」奥义点不足（需要 ' + eff.needOp + '，当前 ' + state.op + '）');
-        state.usedSkill = false;
-        state.aiming = null;
-        return;
-      }
       if (eff.needOp) state.op = 0; // 大招消耗全部奥义点
-      if (!isEnemyAt(cell.x, cell.y)) { toast('对空使用「' + name + '」……还是刷新一下吧（请瞄准敌人）'); state.usedSkill = false; draw(); renderStatus(); return; }
       var dmg = applyDamage(state.enemy, eff.dmg);
       earnOp();
-      toast('⚔️「' + name + '」命中！对 ' + nameShort(cfg.enemy) + ' 造成 ' + dmg + ' 点伤害（护盾吸收后）');
+      toast('⚔️「' + name + '」命中！对 ' + nameShort(cfg.enemy) + ' 造成 ' + dmg + ' 点伤害（' + (state.sp > 0 ? '消耗 ' + cost + ' 技能点' : '未消耗技能点') + '）');
       checkEnd();
     } else if (eff.type === 'hemi') {
-      var selfDmg = Math.min(state.player.hp * 1, applyDamage(state.player, eff.selfDmg));
+      var selfDmg = applyDamage(state.player, eff.selfDmg);
       var enemyHit = isEnemyAt(cell.x, cell.y);
       var enemyDmg = enemyHit ? applyDamage(state.enemy, eff.dmg) : 0;
       if (enemyHit) earnOp();
-      toast('💥「' + name + '」自身受到 ' + selfDmg + ' 伤害' + (enemyHit ? '，对 ' + nameShort(cfg.enemy) + ' 造成 ' + enemyDmg + ' 伤害' : '（范围内没有敌人）'));
+      toast('💥「' + name + '」自身受到 ' + selfDmg + ' 伤害' + (enemyHit ? '，对 ' + nameShort(cfg.enemy) + ' 造成 ' + enemyDmg + ' 伤害' : '（范围内没有敌人）') + '，消耗 ' + cost + ' 技能点');
       checkEnd();
     } else if (eff.type === 'placeCang') {
-      if (state.cang) { toast('⚠ 场上已存在「苍」（一个技能只能同时存在一颗）'); state.usedSkill = false; draw(); return; }
       state.cang = { x: cell.x, y: cell.y };
-      var msg = '🌀「' + name + '」在 (' + cell.x + ',' + cell.y + ') 生成「苍」！';
+      var msg = '🌀「' + name + '」在 (' + cell.x + ',' + cell.y + ') 生成「苍」！' + (cost > 0 ? '消耗 ' + cost + ' 技能点' : '');
       if (cangArea) {
-        // 刚生成时“刚进入”判定：苍的吸附范围内敌人引燃？按规则：进入伤害范围立刻75
         var inside = cangArea.attack.some(function (o) { return state.enemy.x === state.cang.x + o[0] && state.enemy.y === state.cang.y + o[1]; });
         if (inside) {
           var d = applyDamage(state.enemy, 75);
@@ -557,11 +611,6 @@
       if (state.turn !== 'player') { toast('⏳ 现在是敌方回合，请稍候'); return; }
       var kind = btn.getAttribute('data-skill');
 
-      if (state.usedSkill) {
-        toast('🚫 本轮已使用过技能，不能再释放其他技能（结束回合后可再用）');
-        return;
-      }
-
       if (kind === '格挡') {
         if (state.uni.block) { toast('⚠ 格挡本轮已使用过（每轮 1 次）'); return; }
         state.uni.block = true;
@@ -575,8 +624,7 @@
         if (state.uni.attack) { toast('⚠ 普攻本轮已使用过（每轮 1 次）'); return; }
         startAiming('普攻');
         return;
-      }
-      if (kind === '特技') {
+      }      if (kind === '特技') {
         var s = SPECIALS[cfg.special];
         state.specialUsedRound = state.round;
         if (s && /自[己身]/.test(s.raw)) {
@@ -590,11 +638,15 @@
       if (kind === '援助') {
         var key = btn.getAttribute('data-key');
         var a = ASSISTS[key];
+        // 援助按文案同样消耗技能点（如魔虚罗 3 点）
+        var acost = a ? spCostOf(a.raw) : 0;
+        if (state.sp < acost) { toast('⚠ 技能点不足（「' + (a ? a.name : key) + '」需要 ' + acost + ' 点）'); return; }
+        state.sp -= acost;
         state.assistUsedRound[key] = state.round;
         if (a && /自[己身]/.test(a.raw)) {
-          useSelfSkill(a.name, '援助释放');
+          useSelfSkill(a.name, '援助释放·消耗 ' + acost + ' 技能点');
         } else {
-          useRangeSkill(a ? a.name : key, '援助释放');
+          useRangeSkill(a ? a.name : key, '援助释放·消耗 ' + acost + ' 技能点');
         }
         renderSkills(); renderStatus();
         return;
@@ -609,7 +661,15 @@
         var eff = SKILL_EFFECTS[name];
         var hasRange = eff && eff.rangeKey && getRange(eff.rangeKey);
         if (hasRange) { startAiming(name); return; }
-        if (isSelfSkill(name, detail)) { state.usedSkill = true; useSelfSkill(name, NO_RANGE_SKILLS[name] ? '目标已确定（如传送至苍的位置）' : ''); renderStatus(); }
+        if (isSelfSkill(name, detail)) {
+          // 自身类也消耗技能点（按设定）
+          var scost = costFor(name);
+          if (state.sp < scost) { toast('⚠ 技能点不足（「' + name + '」需要 ' + scost + ' 点）'); return; }
+          state.sp -= scost;
+          state.usedSkill = true;
+          useSelfSkill(name, '消耗 ' + scost + ' 技能点' + (NO_RANGE_SKILLS[name] ? '；目标已确定（如传送至苍的位置）' : ''));
+          renderStatus();
+        }
         else useRangeSkill(name);
       }
     });
