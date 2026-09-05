@@ -57,7 +57,7 @@
   var SKILL_EFFECTS = {
     '普攻': { type: 'attack', dmg: 25, rangeKey: '普攻范围' },
     '赫（自爆）': { type: 'hemi', dmg: 120, selfDmg: 75, rangeKey: rangeKeyFor('赫（自爆）') },
-    '苍（最大功率）': { type: 'attack', dmg: 350, rangeKey: rangeKeyFor('苍（最大功率）'), needOp: 6 },
+    '苍（最大功率）': { type: 'aoe', dmg: 350, rangeKey: rangeKeyFor('苍（最大功率）'), needOp: 6 },
     '苍（定点）': { type: 'placeCang', rangeKey: rangeKeyFor('苍（定点）') },
     '苍': { type: 'placeCang', rangeKey: rangeKeyFor('苍') }
   };
@@ -171,10 +171,10 @@
     }
   };
   var DIRS = [
-    { dx: 1, dy: 0, label: '右' }, { dx: 1, dy: 1, label: '右下' },
-    { dx: 0, dy: 1, label: '下' }, { dx: -1, dy: 1, label: '左下' },
-    { dx: -1, dy: 0, label: '左' }, { dx: -1, dy: -1, label: '左上' },
-    { dx: 0, dy: -1, label: '上' }, { dx: 1, dy: -1, label: '右上' }
+    { dx: 0, dy: -1, label: '上' },  // 0 基准方向（范围文件默认朝上）
+    { dx: 1, dy: 0, label: '右' },   // 1
+    { dx: 0, dy: 1, label: '下' },   // 2
+    { dx: -1, dy: 0, label: '左' }   // 3
   ];
 
   /* ---------- 工具 ---------- */
@@ -477,14 +477,17 @@
     if (!info) { toast('没有找到「' + name + '」的范围数据（请到技能范围临时文件里编写）'); return; }
     var cells = [];
     info.cells.forEach(function (o) {
-      var x = state.player.x + o[0], y = state.player.y + o[1];
+      // 范围随“技能释放方向轮盘”旋转（定向技能如苍·最大功率生效）
+      var dx = o[0], dy = o[1];
+      for (var k = 0; k < state.dirIndex; k++) { var t = dx; dx = -dy; dy = t; }
+      var x = state.player.x + dx, y = state.player.y + dy;
       if (inBounds(x, y)) cells.push({ x: x, y: y });
     });
     // 与敌方同格时，本格也算可攻击目标（堆叠规则）
     if (isEnemyAt(state.player.x, state.player.y)) cells.push({ x: state.player.x, y: state.player.y });
     state.aiming = { name: name, cells: cells, eff: eff };
     draw();
-    toast('「' + name + '」瞄准中：点击高亮格子选择目标/位置（点空白处取消）');
+    toast('「' + name + '」瞄准中（朝向：' + DIRS[state.dirIndex].label + '）—— 点击高亮格释放，点空白处取消');
   }
 
   function earnOp() {
@@ -535,6 +538,18 @@
       var enemyDmg = enemyHit ? applyDamage(state.enemy, eff.dmg) : 0;
       if (enemyHit) earnOp();
       toast('💥「' + name + '」自身受到 ' + selfDmg + ' 伤害' + (enemyHit ? '，对 ' + nameShort(cfg.enemy) + ' 造成 ' + enemyDmg + ' 伤害' : '（范围内没有敌人）') + '，消耗 ' + cost + ' 技能点');
+      checkEnd();
+    } else if (eff.type === 'aoe') {
+      // 苍（最大功率）：定向范围，对范围内所有目标造成伤害
+      if (eff.needOp) state.op = 0; // 大招消耗全部奥义点
+      var inside = aim.cells.some(function (c) { return c.x === state.enemy.x && c.y === state.enemy.y; });
+      if (inside) {
+        var dd = applyDamage(state.enemy, eff.dmg);
+        earnOp();
+        toast('🌋「' + name + '」轰击！对范围内所有目标造成 ' + dd + ' 点伤害（' + nameShort(cfg.enemy) + ' 被命中）');
+      } else {
+        toast('🌋「' + name + '」轰击范围（朝向 ' + DIRS[state.dirIndex].label + '），敌人不在范围内');
+      }
       checkEnd();
     } else if (eff.type === 'placeCang') {
       var replaced = !!state.cang;
@@ -684,9 +699,9 @@
     });
   }
 
-  /* ---------- 方向选择 ---------- */
-  var dirButtons = ['d-nw', 'd-n', 'd-ne', 'd-w', 'd-e', 'd-sw', 'd-s', 'd-se'];
-  var dirMap = { 'd-nw': 5, 'd-n': 6, 'd-ne': 7, 'd-w': 4, 'd-e': 0, 'd-sw': 3, 'd-s': 2, 'd-se': 1 };
+  /* ---------- 方向选择（上下左右四向） ---------- */
+  var dirButtons = ['d-n', 'd-e', 'd-s', 'd-w'];
+  var dirMap = { 'd-n': 0, 'd-e': 1, 'd-s': 2, 'd-w': 3 };
   function renderDir() {
     document.getElementById('cur-dir').textContent = DIRS[state.dirIndex].label;
     dirButtons.forEach(function (id) {
@@ -848,6 +863,7 @@
       state.dirIndex = dirMap[id];
       renderDir();
       toast('技能释放方向已设为：' + DIRS[state.dirIndex].label);
+      if (state.aiming) startAiming(state.aiming.name); // 瞄准中转向 → 实时旋转范围
     });
   });
 
