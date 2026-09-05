@@ -130,16 +130,9 @@
 
   var rangeCache = {};
   function getRange(key) {
+    // 严格精确匹配（文件名带“ - 副本”等前缀后缀的未写好的范围图不当作正式范围）
     if (!(key in rangeCache)) {
-      var g = SKILL_RANGES[key];
-      if (!g) {
-        // 兼容文件名带后缀的情况（如“普攻范围 - 副本 (2)”仍视为“普攻范围”）
-        var ks = Object.keys(SKILL_RANGES);
-        for (var i = 0; i < ks.length; i++) {
-          if (ks[i].indexOf(key) === 0) { g = SKILL_RANGES[ks[i]]; break; }
-        }
-      }
-      rangeCache[key] = g ? parseRangeGrid(g) : null;
+      rangeCache[key] = SKILL_RANGES[key] ? parseRangeGrid(SKILL_RANGES[key]) : null;
     }
     return rangeCache[key];
   }
