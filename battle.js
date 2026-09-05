@@ -151,6 +151,7 @@
     selected: 'player',
     dirIndex: 0,
     uni: { attack: false, block: false },  // 通用技能每轮各1次
+    infinity: 0,                    // 「无限」状态剩余轮数（无下限术式·敌方攻击无法命中/无法靠近）
     usedSkill: false,               // 使用技能后本轮不可再移动/放技能
     specialUsedRound: 0,
     assistUsedRound: {},
@@ -474,6 +475,7 @@
     if (state.cang) chips.push('🌀 场上有「苍」');
     if (state.selected === 'player') {
       if (state.usedSkill) chips.push('🚫 已用技能·不可移动');
+      if (state.infinity > 0) chips.push('🌀 无限（剩 ' + state.infinity + ' 轮）·敌方攻击无法命中/无法靠近');
       if (state.maha) {
         var adText = [];
         Object.keys(state.maha.adapts).forEach(function (k) {
@@ -604,11 +606,11 @@
       toast('⚔️「' + name + '」命中！对 ' + nameShort(cfg.enemy) + ' 造成 ' + dmg + ' 点伤害（' + (state.sp > 0 ? '消耗 ' + cost + ' 技能点' : '未消耗技能点') + '）');
       checkEnd();
     } else if (eff.type === 'hemi') {
-      var selfDmg = applyDamage(state.player, eff.selfDmg);
+      var selfDmg = (state.infinity > 0) ? 0 : applyDamage(state.player, eff.selfDmg);
       var enemyHit = isEnemyAt(cell.x, cell.y);
       var enemyDmg = enemyHit ? applyDamage(state.enemy, eff.dmg) : 0;
       if (enemyHit) earnOp();
-      toast('💥「' + name + '」自身受到 ' + selfDmg + ' 伤害' + (enemyHit ? '，对 ' + nameShort(cfg.enemy) + ' 造成 ' + enemyDmg + ' 伤害' : '（范围内没有敌人）') + '，消耗 ' + cost + ' 技能点');
+      toast('💥「' + name + '」自身受到 ' + selfDmg + ' 伤害' + (state.infinity > 0 ? '（「无限」使自身伤害无效）' : '') + (enemyHit ? '，对 ' + nameShort(cfg.enemy) + ' 造成 ' + enemyDmg + ' 伤害' : '（范围内没有敌人）') + '，消耗 ' + cost + ' 技能点');
       checkEnd();
     } else if (eff.type === 'aoe') {
       // 苍（最大功率）：定向范围，对范围内所有目标造成伤害
@@ -768,6 +770,15 @@
             draw(); renderStatus();
             return;
           }
+          // 无下限术式：获得「无限」状态（2轮）
+          if (name === '无下限术式') {
+            state.sp -= scost;
+            state.infinity = 2;
+            state.usedSkill = true;
+            toast('🌀「无下限术式」：获得「无限」状态（2轮）——敌方攻击无法命中，敌方无法靠近你一格以内' + (scost > 0 ? '，消耗 ' + scost + ' 技能点' : ''));
+            draw(); renderStatus();
+            return;
+          }
           state.sp -= scost;
           state.usedSkill = true;
           useSelfSkill(name, '消耗 ' + scost + ' 技能点' + (NO_RANGE_SKILLS[name] ? '；目标已确定（如传送至苍的位置）' : ''));
@@ -882,7 +893,10 @@
     if (dy !== 0) tries.push([0, dy > 0 ? 1 : -1]);
     for (var i = 0; i < tries.length; i++) {
       var nx = e.x + tries[i][0], ny = e.y + tries[i][1];
-      if (inBounds(nx, ny) && mapData[ny][nx] === 0) { e.x = nx; e.y = ny; moved = true; break; } // 允许与玩家同格
+      // 「无限」：敌方无法主动靠近自身一格以内
+      var blockedByInfinity = state.infinity > 0 &&
+        Math.abs(nx - state.player.x) <= 1 && Math.abs(ny - state.player.y) <= 1;
+      if (inBounds(nx, ny) && mapData[ny][nx] === 0 && !blockedByInfinity) { e.x = nx; e.y = ny; moved = true; break; }
     }
     return moved;
   }
@@ -904,9 +918,13 @@
         if (target === 'maha') {
           enemyAttacksMaha();
         } else {
-          // 普攻
-          var dmg = applyDamage(state.player, 25);
-          toast('⚔️ ' + nameShort(cfg.enemy) + ' 对你普攻：造成 ' + dmg + ' 点伤害' + (state.player.hp <= 0 ? '' : '（护盾吸收剩余值已结算）'));
+          if (state.infinity > 0) {
+            // 「无限」：敌方攻击无法命中
+            toast('🛡「无限」使 ' + nameShort(cfg.enemy) + ' 的攻击无法命中！');
+          } else {
+            var dmg = applyDamage(state.player, 25);
+            toast('⚔️ ' + nameShort(cfg.enemy) + ' 对你普攻：造成 ' + dmg + ' 点伤害' + (state.player.hp <= 0 ? '' : '（护盾吸收剩余值已结算）'));
+          }
         }
         renderStatus();
         checkEnd();
@@ -973,6 +991,10 @@
     state.uni = { attack: false, block: false };
     state.usedSkill = false;
     state.enemyAttractNoted = false;
+    if (state.infinity > 0) {
+      state.infinity--;
+      if (state.infinity <= 0) toast('⌛「无限」状态消失');
+    }
     state.turn = 'player';
     document.getElementById('round-info').textContent = '第 ' + state.round + ' 轮';
     draw();
