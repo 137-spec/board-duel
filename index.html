@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>同人棋盘对决</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="menu">
+    <h1 class="game-title">同人棋盘对决</h1>
+    <p class="coin-display">💰 金币数：<span id="coin">0</span></p>
+
+    <nav class="menu-list">
+      <button class="menu-btn" data-action="soon">⚔️ 开始游戏</button>
+      <a class="menu-btn" href="rules.html">📜 规则说明</a>
+      <button class="menu-btn" data-action="soon">👤 角色介绍</button>
+      <button class="menu-btn" data-action="soon">🛒 商店</button>
+      <button class="menu-btn" data-action="soon">🏋️ 训练营</button>
+      <button class="menu-btn" data-action="soon">🌟 挑战模式</button>
+      <button class="menu-btn" data-action="soon">🎮 按键设定</button>
+      <button class="menu-btn" data-action="soon">🎁 兑换码</button>
+    </nav>
+  </main>
+
+  <div class="modal-mask hidden" id="modal">
+    <div class="modal">
+      <h2>⏳ 敬请期待</h2>
+      <p>该功能正在开发中，完成后再来体验吧！</p>
+      <button class="menu-btn small" id="modal-close">知道了</button>
+    </div>
+  </div>
+
+  <!-- 数据文件（由 convert.bat 生成，修改 txt 后需重新转换） -->
+  <script src="data/maps.js"></script>
+  <script src="data/skills.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
