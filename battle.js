@@ -270,6 +270,32 @@
   var CELL = 26;
   var camX = 0, camY = 0;
   var mapPxW = W * CELL, mapPxH = H * CELL;
+  // 小地图
+  var mmCanvas = document.getElementById('minimap');
+  var mmCtx = mmCanvas.getContext('2d');
+  var MM = Math.max(2, Math.min(4, Math.floor(180 / Math.max(W, H))));
+  mmCanvas.width = W * MM;
+  mmCanvas.height = H * MM;
+  function drawMinimap() {
+    mmCtx.fillStyle = '#f4f4f4';
+    mmCtx.fillRect(0, 0, mmCanvas.width, mmCanvas.height);
+    for (var y = 0; y < H; y++) {
+      for (var x = 0; x < W; x++) {
+        if (mapData[y][x] !== 0) {
+          mmCtx.fillStyle = '#8a5a26';
+          mmCtx.fillRect(x * MM, y * MM, MM, MM);
+        }
+      }
+    }
+    if (state.cang) {
+      mmCtx.fillStyle = '#2b1a6b';
+      mmCtx.fillRect(state.cang.x * MM, state.cang.y * MM, MM, MM);
+    }
+    mmCtx.fillStyle = '#ff5252';
+    mmCtx.fillRect(state.enemy.x * MM, state.enemy.y * MM, MM, MM);
+    mmCtx.fillStyle = '#3f8cff';
+    mmCtx.fillRect(state.player.x * MM, state.player.y * MM, MM, MM);
+  }
 
   function resize() {
     var box = canvas.parentElement;
@@ -350,6 +376,7 @@
     drawCang();
     drawUnit(state.player, '#3f8cff', '#eaf4ff');
     drawUnit(state.enemy, '#ff5252', '#ffecec');
+    drawMinimap();
   }
   function drawCang() {
     if (!state.cang) return;
@@ -441,6 +468,17 @@
       html += '</div>';
     }
     document.getElementById('status-body').innerHTML = html;
+    renderEnemyStrip();
+  }
+
+  /* ---------- 敌方血条（顶部常驻） ---------- */
+  function renderEnemyStrip() {
+    var e = state.enemy;
+    var c = CHARACTERS[cfg.enemy];
+    document.getElementById('enemy-name').textContent = nameShort(cfg.enemy) + '（LV' + (c.level || '—') + '）';
+    document.getElementById('enemy-hp-bar').style.width =
+      Math.max(0, Math.min(100, e.hp / (c.hp || 1) * 100)) + '%';
+    document.getElementById('enemy-hp-text').textContent = e.hp + '/' + (c.hp || '—');
   }
 
   /* ---------- 移动 ---------- */
@@ -841,6 +879,16 @@
   canvas.addEventListener('mousedown', function (e) { startDrag(e.clientX, e.clientY); e.preventDefault(); });
   canvas.addEventListener('mousemove', function (e) { moveDrag(e.clientX, e.clientY); });
   window.addEventListener('mouseup', function (e) { endDrag(e.clientX, e.clientY); });
+  // 小地图点击 → 跳转视角
+  mmCanvas.addEventListener('click', function (e) {
+    var rect = mmCanvas.getBoundingClientRect();
+    var x = Math.floor((e.clientX - rect.left) / (rect.width / W));
+    var y = Math.floor((e.clientY - rect.top) / (rect.height / H));
+    camX = (x + 0.5) * CELL - canvas.width / 2;
+    camY = (y + 0.5) * CELL - canvas.height / 2;
+    clampCam();
+    draw();
+  });
   canvas.addEventListener('touchstart', function (e) {
     if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY);
   }, { passive: true });
