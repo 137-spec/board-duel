@@ -95,7 +95,15 @@
   min-width: 0;
   min-height: 0;
 }
-#board { max-width: 100%; max-height: 100%; }
+#board {
+  max-width: 100%;
+  max-height: 100%;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#board.dragging { cursor: grabbing; }
 
 #toast {
   position: absolute;

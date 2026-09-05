@@ -75,6 +75,12 @@
   function nameShort(key) {
     return displayName(key).split('（')[0];
   }
+  // 角色代表字：五条悟→五 伏黑惠→惠 宿傩→傩 …（未配置的取名字首字）
+  var REP_CHARS = { '五条悟': '五', '伏黑惠': '惠', '虎杖悠人': '悠', '宿傩': '傩', '乙骨优太': '乙', '伏黑甚尔': '甚' };
+  function repChar(key) {
+    var base = nameShort(key);
+    return REP_CHARS[base] || base.charAt(0);
+  }
   function charSkillList(key) {
     var c = CHARACTERS[key];
     if (!c || c.kind === 'empty') return [];
@@ -84,47 +90,72 @@
     });
   }
 
-  /* ---------- 画布渲染 ---------- */
+  /* ---------- 画布渲染（固定格子尺寸 + 拖动平移查看） ---------- */
   var canvas = document.getElementById('board');
   var ctx = canvas.getContext('2d');
+  var CELL = 22;              // 每格固定像素（地图保持放大比例）
+  var camX = 0, camY = 0;     // 视野左上角（地图像素坐标）
+  var mapPxW = W * CELL, mapPxH = H * CELL;
+
   function resize() {
     var box = canvas.parentElement;
-    var availW = box.clientWidth - 16, availH = box.clientHeight - 16;
-    var cell = Math.max(8, Math.floor(Math.min(availW / W, availH / H)));
-    canvas.width = cell * W;
-    canvas.height = cell * H;
+    canvas.width = Math.max(50, box.clientWidth - 8);
+    canvas.height = Math.max(50, box.clientHeight - 8);
+    centerCam();
     draw();
   }
+  function clampCam() {
+    var maxX = mapPxW - canvas.width, maxY = mapPxH - canvas.height;
+    camX = maxX <= 0 ? (mapPxW - canvas.width) / 2 : Math.max(0, Math.min(maxX, camX));
+    camY = maxY <= 0 ? (mapPxH - canvas.height) / 2 : Math.max(0, Math.min(maxY, camY));
+  }
+  function centerCam() {
+    // 开局视野锁定我方角色
+    camX = (state.player.x + 0.5) * CELL - canvas.width / 2;
+    camY = (state.player.y + 0.5) * CELL - canvas.height / 2;
+    clampCam();
+  }
   function draw() {
-    var cell = canvas.width / W;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // 地面
     ctx.fillStyle = '#221640';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    for (var y = 0; y < H; y++) {
-      for (var x = 0; x < W; x++) {
+    // 只画视野内的格子（大图也流畅）
+    var x0 = Math.max(0, Math.floor(camX / CELL));
+    var y0 = Math.max(0, Math.floor(camY / CELL));
+    var x1 = Math.min(W - 1, Math.ceil((camX + canvas.width) / CELL));
+    var y1 = Math.min(H - 1, Math.ceil((camY + canvas.height) / CELL));
+    for (var y = y0; y <= y1; y++) {
+      for (var x = x0; x <= x1; x++) {
         var v = mapData[y][x];
-        if (v !== 0) { // 任意非0格画障碍底色（后续读技能范围/障碍）
+        if (v !== 0) { // 障碍物底色（后续读障碍）
           ctx.fillStyle = '#4a2b12';
-          ctx.fillRect(x * cell + 1, y * cell + 1, cell - 2, cell - 2);
+          ctx.fillRect(x * CELL - camX + 1, y * CELL - camY + 1, CELL - 2, CELL - 2);
         }
       }
     }
     // 网格线
-    ctx.strokeStyle = 'rgba(255,255,255,.07)';
+    ctx.strokeStyle = 'rgba(255,255,255,.08)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (var i = 0; i <= W; i++) { ctx.moveTo(i * cell, 0); ctx.lineTo(i * cell, canvas.height); }
-    for (var j = 0; j <= H; j++) { ctx.moveTo(0, j * cell); ctx.lineTo(canvas.width, j * cell); }
+    for (var i = x0; i <= x1 + 1; i++) {
+      var sx = i * CELL - camX;
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx, canvas.height);
+    }
+    for (var j = y0; j <= y1 + 1; j++) {
+      var sy = j * CELL - camY;
+      ctx.moveTo(0, sy);
+      ctx.lineTo(canvas.width, sy);
+    }
     ctx.stroke();
-    // 单位
-    drawUnit(state.player, '#3f8cff', '#bfe0ff');
-    drawUnit(state.enemy, '#ff5252', '#ffd0d0');
+    // 单位（代表字显示）
+    drawUnit(state.player, '#3f8cff', '#eaf4ff');
+    drawUnit(state.enemy, '#ff5252', '#ffecec');
   }
   function drawUnit(u, fill, textColor) {
-    var cell = canvas.width / W;
-    var cx = (u.x + 0.5) * cell, cy = (u.y + 0.5) * cell;
-    var r = cell * 0.36;
+    var cx = (u.x + 0.5) * CELL - camX, cy = (u.y + 0.5) * CELL - camY;
+    if (cx < -24 || cy < -24 || cx > canvas.width + 24 || cy > canvas.height + 24) return;
+    var r = CELL * 0.42;
     var isSel = (state.selected === 'player' && u === state.player) ||
       (state.selected === 'enemy' && u === state.enemy);
     if (isSel) {
@@ -142,10 +173,10 @@
     ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.fillStyle = textColor;
-    ctx.font = 'bold ' + Math.max(10, cell * 0.34) + 'px sans-serif';
+    ctx.font = 'bold ' + Math.min(15, Math.round(CELL * 0.52)) + 'px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(nameShort(u.key), cx, cy);
+    ctx.fillText(repChar(u.key), cx, cy);
   }
 
   /* ---------- 状态区块 ---------- */
@@ -316,13 +347,46 @@
   document.getElementById('sel-me').addEventListener('click', function () { selectUnit('player'); });
   document.getElementById('sel-enemy').addEventListener('click', function () { selectUnit('enemy'); });
 
-  canvas.addEventListener('click', function (e) {
-    var rect = canvas.getBoundingClientRect();
-    var cell = canvas.width / W;
-    var x = Math.floor((e.clientX - rect.left) / (rect.width / W));
-    var y = Math.floor((e.clientY - rect.top) / (rect.height / H));
-    if (state.player.x === x && state.player.y === y) selectUnit('player');
-    else if (state.enemy.x === x && state.enemy.y === y) selectUnit('enemy');
+  /* ---------- 按住拖动平移地图 / 轻点选中单位 ---------- */
+  var dragState = null;
+  function startDrag(clientX, clientY) {
+    dragState = { sx: clientX, sy: clientY, camX: camX, camY: camY, moved: 0 };
+    canvas.classList.add('dragging');
+  }
+  function moveDrag(clientX, clientY) {
+    if (!dragState) return;
+    var dx = clientX - dragState.sx, dy = clientY - dragState.sy;
+    dragState.moved += Math.abs(dx) + Math.abs(dy);
+    camX = dragState.camX - dx;
+    camY = dragState.camY - dy;
+    clampCam();
+    draw();
+  }
+  function endDrag(clientX, clientY) {
+    if (!dragState) return;
+    var moved = dragState.moved;
+    dragState = null;
+    canvas.classList.remove('dragging');
+    if (moved < 6) { // 基本没动 → 视为点击选中
+      var rect = canvas.getBoundingClientRect();
+      var gx = Math.floor((clientX - rect.left + camX) / CELL);
+      var gy = Math.floor((clientY - rect.top + camY) / CELL);
+      if (state.player.x === gx && state.player.y === gy) selectUnit('player');
+      else if (state.enemy.x === gx && state.enemy.y === gy) selectUnit('enemy');
+    }
+  }
+  canvas.addEventListener('mousedown', function (e) { startDrag(e.clientX, e.clientY); e.preventDefault(); });
+  canvas.addEventListener('mousemove', function (e) { moveDrag(e.clientX, e.clientY); });
+  window.addEventListener('mouseup', function (e) { endDrag(e.clientX, e.clientY); });
+  canvas.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+  canvas.addEventListener('touchmove', function (e) {
+    if (e.touches.length === 1) { moveDrag(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
+  }, { passive: false });
+  canvas.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0];
+    endDrag(t ? t.clientX : 0, t ? t.clientY : 0);
   });
 
   document.getElementById('btn-end-round').addEventListener('click', endRound);
@@ -333,5 +397,5 @@
   renderDir();
   renderStatus();
   resize();
-  toast('第 1 轮开始！点击左下方向键移动，右半边选择技能（范围稍后补全）');
+  toast('第 1 轮开始！方向键移动 · 按住中间地图拖动查看 · 右半边选择技能（范围稍后补全）');
 })();
