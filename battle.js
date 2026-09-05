@@ -38,6 +38,10 @@
     var lv = (c && c.level) || 0;
     return 6 + Math.min(lv, 5);
   }
+  // 宿傩被动·诅咒之王：技能点上限+3，每轮多回复一点
+  function isSukunaKey(key) { return /宿傩/.test(displayName(key)); }
+  function spCapOf() { return isSukunaKey(cfg.player) ? 6 : 3; }
+  function spRegenOf() { return isSukunaKey(cfg.player) ? 2 : 1; }
   // 代表字
   var REP_CHARS = { '五条悟': '五', '伏黑惠': '惠', '虎杖悠人': '悠', '宿傩': '傩', '乙骨优太': '乙', '伏黑甚尔': '甚' };
   function repChar(key) {
@@ -175,6 +179,10 @@
     domExtend: false,               // 「领域展延」·本轮受伤-30%·期间无法使用其余技能
     dust: 0,                        // 宿傩粉尘值（领域每轮+20%）
     domain: null,                   // {rounds, cells:[{x,y}]} 领域展开
+    sureHit: false,                 // 领域内必中锁定（已选目标=敌方）
+    enemyDomain: null,              // 敌方宿傩的领域 {rounds, cx, cy}
+    openWindup: null,               // 开·蓄力前摇 {cells, dmg}
+    deadShikigami: {},              // 阵亡的式神（不可再召唤）
     breakRounds: 0,                 // 术式熔断剩余轮数（领域结束后5轮）
     shiki: null,                    // 式神 {kind,x,y,hp,heal,adapts}
     enemySlow: 0,                   // 敌方本轮可移动格数惩罚（蛛网解-2/领域-5）
@@ -401,6 +409,18 @@
         }
       });
     }
+    // 敌方领域区域提示
+    if (state.enemyDomain) {
+      for (var ey = Math.max(0, state.enemy.y - 7); ey <= Math.min(H - 1, state.enemy.y + 7); ey++) {
+        for (var ex = Math.max(0, state.enemy.x - 7); ex <= Math.min(W - 1, state.enemy.x + 7); ex++) {
+          var epx = ex * CELL - camX, epy = ey * CELL - camY;
+          if (epx > -CELL && epy > -CELL && epx < canvas.width + CELL && epy < canvas.height + CELL) {
+            ctx.fillStyle = 'rgba(255,120,120,.12)';
+            ctx.fillRect(epx + 1, epy + 1, CELL - 2, CELL - 2);
+          }
+        }
+      }
+    }
     // 瞄准高亮
     if (state.aiming) {
       state.aiming.cells.forEach(function (c) {
@@ -524,10 +544,10 @@
     html += '<div class="stat-line"><span class="label">血量</span><b>' + u.hp + ' / ' + (c.hp || '—') + '</b></div>';
     if (state.selected === 'player') {
       html += '<div class="stat-line"><span class="label">行动点</span><span class="dots">'
-        + (state.ap > 0 ? '●' : '○') + '（剩余步数 ' + Math.max(0, state.moveCap - state.movedThisRound) + '/' + state.moveCap + '）</span></div>';
+        + (state.ap > 0 ? '●' : '○') + '（剩余步数 ' + Math.max(0, state.moveCap - (state.playerSlow || 0) - state.movedThisRound) + '/' + Math.max(0, state.moveCap - (state.playerSlow || 0)) + '）</span></div>';
       html += '<div class="stat-line"><span class="label">移动上限</span><b>6+等级' + ((c && c.level) || 0) + ' = ' + state.moveCap + ' 格</b></div>';
       html += '<div class="stat-line"><span class="label">技能点</span><span class="dots">'
-        + '●'.repeat(state.sp) + '○'.repeat(3 - state.sp) + ' ' + state.sp + '/3</span></div>';
+        + '●'.repeat(state.sp) + '○'.repeat(Math.max(0, spCapOf() - state.sp)) + ' ' + state.sp + '/' + spCapOf() + '</span></div>';
       html += '<div class="stat-line"><span class="label">奥义点</span><span class="dots">'
         + '●'.repeat(state.op) + '○'.repeat(6 - state.op) + ' ' + state.op + '/6</span></div>';
       if (/宿傩/.test(displayName(cfg.player))) {
@@ -543,6 +563,11 @@
       if (state.usedSkill) chips.push('🚫 已用技能·不可移动');
       if (state.infinity > 0) chips.push('🌀 无限（剩 ' + state.infinity + ' 轮）·敌方攻击无法命中/无法靠近');
       if (state.domExtend) chips.push('🔰 领域展延·受伤-30%·无法使用其余技能');
+      if (state.domain) chips.push('🌐 领域展开中（剩 ' + state.domain.rounds + ' 轮）·每轮+20%粉尘');
+      if (state.enemyDomain) chips.push('🌐 敌方领域展开中（剩 ' + state.enemyDomain.rounds + ' 轮）');
+      if (state.openWindup) chips.push('🌋 「开」蓄力中（被打断则取消）');
+      if (state.playerSlow > 0) chips.push('🐌 被领域减速：移动上限-5');
+      if (state.breakRounds > 0) chips.push('⚡ 术式熔断：剩 ' + state.breakRounds + ' 轮（仅通用技能）');
       if (state.maha) {
         var adText = [];
         Object.keys(state.maha.adapts).forEach(function (k) {
@@ -592,8 +617,7 @@
     if (!inBounds(nx, ny)) { toast('⚠ 到达地图边界'); return; }
     if (mapData[ny][nx] !== 0) { toast('⚠ 该格有障碍物'); return; }
     // 允许与敌方同格、与苍重叠（战棋可堆叠规则）
-    if (state.movedThisRound >= state.moveCap || state.ap <= 0) { toast('⚠ 本轮步数已用完'); return; }
-    u.x = nx; u.y = ny;
+    if (state.movedThisRound >= Math.max(0, state.moveCap - (state.playerSlow || 0)) || state.ap <= 0) { toast('⚠ 本轮步数已用完'); return; }    u.x = nx; u.y = ny;
     state.movedThisRound++;
     if (state.movedThisRound >= state.moveCap) state.ap = 0;
     draw();
@@ -704,9 +728,13 @@
       toast('⚠ 普攻本轮已使用过（每轮 1 次）');
       return;
     }
-    if (eff.type === 'attack' && !isEnemyAt(cell.x, cell.y)) {
+    if (eff.type === 'attack' && !isEnemyAt(cell.x, cell.y) && !state.sureHit) {
       toast('请瞄准敌人（范围内没有敌人）');
       return;
+    }
+    if (eff.type === 'shikigami') {
+      if (state.deadShikigami[eff.key]) { toast('⚠ 式神「' + eff.key + '」已阵亡，无法再次召唤'); state.aiming = null; draw(); return; }
+      if (state.shiki) { toast('⚠ 场上已有式神（可先收回再召唤）'); state.aiming = null; draw(); return; }
     }
 
     // 技能点结算（按角色设定；六眼→1）
@@ -737,7 +765,7 @@
     } else if (eff.type === 'aoe') {
       // 对范围内所有目标命中（解/捌/蛛网解/咒词解/苍最大功率）
       if (eff.needOp) state.op = 0;
-      var inside = aim.cells.some(function (c) { return c.x === state.enemy.x && c.y === state.enemy.y; });
+      var inside = state.sureHit || aim.cells.some(function (c) { return c.x === state.enemy.x && c.y === state.enemy.y; });
       var base = eff.hpPct
         ? Math.round((CHARACTERS[cfg.enemy].hp || 1) * eff.hpPct) + (eff.plus || 0)
         : eff.dmg;
@@ -751,19 +779,11 @@
       if (eff.slow) { state.enemySlow += eff.slow; toast('🕸 蛛网解：敌方本轮可移动格数-2'); }
       checkEnd();
     } else if (eff.type === 'open') {
-      // 开：粉尘档位
-      if (eff.needOp) state.op = 0;
+      // 开：进入一轮蓄力前摇（期间被打断则取消并返还技能点）
       var tierLabel = state.dust >= 100 ? '100%' : state.dust >= 80 ? '80%' : state.dust >= 50 ? '50%' : state.dust >= 30 ? '30%' : '基础';
       var openDmg = openDmgFor(state.dust);
-      var inside2 = aim.cells.some(function (c) { return c.x === state.enemy.x && c.y === state.enemy.y; });
-      if (inside2) {
-        var d3 = applyDamage(state.enemy, openDmg);
-        earnOp();
-        toast('🌋「开」轰击（粉尘 ' + tierLabel + '）：' + nameShort(cfg.enemy) + ' 受到 ' + d3 + ' 点伤害！');
-      } else {
-        toast('🌋「开」轰击（粉尘 ' + tierLabel + '），敌人不在范围内');
-      }
-      checkEnd();
+      state.openWindup = { cells: aim.cells, dmg: openDmg, tier: tierLabel };
+      toast('🌋「开」蓄力中（粉尘 ' + tierLabel + '）…本轮结束时释放，期间被打断则取消（已消耗 ' + cost + ' 技能点）');
     } else if (eff.type === 'dashAoe') {
       // 前冲解/后撤解：冲刺 + 区域解（文件自带路径/范围）
       var dinfo = getDash(eff.rangeKey);
@@ -785,7 +805,7 @@
         if (inBounds(x3, y3)) cells2.push({ x: x3, y: y3 });
       });
       if (eff.dilate) cells2 = dilateCells(cells2, eff.dilate);
-      var hit2 = cells2.some(function (c) { return c.x === state.enemy.x && c.y === state.enemy.y; });
+      var hit2 = state.sureHit || cells2.some(function (c) { return c.x === state.enemy.x && c.y === state.enemy.y; });
       if (hit2) {
         var d4 = applyDamage(state.enemy, eff.dmg);
         earnOp();
@@ -865,6 +885,14 @@
           sk.name + '<span class="cd">' + badge + '</span></button>';
       });
     }
+    // 领域内必中锁定
+    if (state.domain && !state.sureHit) {
+      html += '<button class="skill-btn" data-skill="surehit" style="border-color:#b07eff;">🗡 必中锁定（领域内攻击必定命中敌方）</button>';
+    }
+    // 式神收回
+    if (state.shiki) {
+      html += '<button class="skill-btn" data-skill="recall-shiki">📡 收回式神「' + state.shiki.kind + '」（本轮未行动前）</button>';
+    }
     list.innerHTML = html;
   }
 
@@ -892,6 +920,18 @@
         state.player.shield = (state.player.shield || 0) + 25;
         toast('🛡 格挡生效：为自身添加 25 点护盾（无范围，直接生效）');
         renderSkills(); renderStatus();
+        return;
+      }
+      if (state.domain && !state.sureHit && kind === 'surehit') {
+        state.sureHit = true;
+        toast('🗡 必中锁定：此后所有攻击都会打中 ' + nameShort(cfg.enemy) + '（无视范围）');
+        renderSkills();
+        return;
+      }
+      if (kind === 'recall-shiki') {
+        state.shiki = null;
+        toast('📡 式神已收回（未阵亡，可再次召唤）');
+        renderSkills();
         return;
       }
       if (kind === '普攻') {
@@ -1108,7 +1148,10 @@
     state.shiki.hp = Math.max(0, state.shiki.hp - 25);
     var dead = state.shiki.hp <= 0;
     toast('⚔️ ' + nameShort(cfg.enemy) + ' 普攻式神：25 点伤害' + (dead ? '（式神被击破！）' : '（' + state.shiki.kind + ' ' + state.shiki.hp + ' 血）'));
-    if (dead) state.shiki = null;
+    if (dead) {
+      state.deadShikigami[state.shiki.kind] = true; // 阵亡不可再召唤
+      state.shiki = null;
+    }
     renderStatus();
   }
   function enemyAttacksMaha() {
@@ -1157,9 +1200,16 @@
     draw();
     renderStatus();
     toast('⏳ ' + nameShort(cfg.enemy) + ' 开始行动…');
+    state.playerSlow = 0; // 敌方领域减速在玩家回合生效后重置
     mahaAct(); // 玩家召唤的魔虚罗先行（AI操控）
     shikiAct(); // 式神也先行
     if (state.gameOver) return;
+    // 敌方宿傩：第3轮自动展开领域（AI 演示）
+    if (isSukunaKey(cfg.enemy) && !state.enemyDomain && state.round >= 3) {
+      state.enemyDomain = { rounds: 5 };
+      toast('🌐 ' + nameShort(cfg.enemy) + ' 展开领域「伏魔御厨子」！（敌方每轮结束两次解的伤害·粉尘+20%）');
+      draw(); renderStatus();
+    }
     var cap = Math.max(0, moveCapOf(cfg.enemy) - state.enemySlow - (state.domain ? 5 : 0));
     var steps = 0;
     var iv = setInterval(function () {
@@ -1172,7 +1222,12 @@
         } else if (target === 'shiki') {
           enemyAttacksShiki();
         } else {
-          if (state.infinity > 0) {
+          if (state.openWindup) {
+            // 「开」蓄力被打断：取消并返还技能点
+            state.sp = Math.min(spCapOf(), state.sp + 4);
+            state.openWindup = null;
+            toast('💢 「开」蓄力被 ' + nameShort(cfg.enemy) + ' 打断！技能取消（返还 4 技能点）');
+          } else if (state.infinity > 0) {
             // 「无限」：敌方攻击无法命中
             toast('🛡「无限」使 ' + nameShort(cfg.enemy) + ' 的攻击无法命中！');
           } else {
@@ -1230,6 +1285,34 @@
       }
     }
     if (state.gameOver) return;
+    // 「开」蓄力完成：本轮结束时释放（若敌方仍在打击区内）
+    if (state.openWindup) {
+      var hitOpen = state.sureHit || state.openWindup.cells.some(function (c) { return c.x === state.enemy.x && c.y === state.enemy.y; });
+      if (hitOpen) {
+        var dOpen = applyDamage(state.enemy, state.openWindup.dmg);
+        earnOp();
+        toast('🌋「开」蓄力完成！轰击（粉尘 ' + state.openWindup.tier + '）：' + nameShort(cfg.enemy) + ' 受到 ' + dOpen + ' 点伤害');
+        checkEnd();
+      } else {
+        toast('🌋「开」蓄力完成但敌人已不在打击范围');
+      }
+      state.openWindup = null;
+    }
+    if (state.gameOver) return;
+    // 敌方领域：每轮结束两次「解」+ 玩家减速
+    if (state.enemyDomain) {
+      state.enemyDomain.rounds--;
+      var inED = Math.abs(state.player.x - state.enemy.x) <= 7 && Math.abs(state.player.y - state.enemy.y) <= 7;
+      if (inED) {
+        var dE1 = applyDamage(state.player, 200);
+        var dE2 = applyDamage(state.player, 200);
+        state.playerSlow = 5;
+        toast('🌐 敌方领域每轮结束：两次「解」对你造成 ' + (dE1 + dE2) + ' 点伤害（已减速-5）');
+        checkEnd();
+      }
+      if (state.enemyDomain && state.enemyDomain.rounds <= 0) state.enemyDomain = null;
+    }
+    if (state.gameOver) return;
     // 术式熔断递减
     if (state.breakRounds > 0) state.breakRounds--;
     // 领域展开：每轮结束两次「解」伤害 + 粉尘+20%
@@ -1272,7 +1355,7 @@
     }
     state.round++;
     state.ap = 1;
-    state.sp = Math.min(3, state.sp + 1);
+    state.sp = Math.min(spCapOf(), state.sp + spRegenOf());
     state.movedThisRound = 0;
     state.uni = { attack: false, block: false };
     state.usedSkill = false;
