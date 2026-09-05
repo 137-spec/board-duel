@@ -45,13 +45,13 @@
     assistUsedRound: {}, // 援助上次使用轮（CD=7轮）
     player: {
       key: cfg.player,
-      x: 1, y: 1,
+      x: 10, y: 10,
       hp: (CHARACTERS[cfg.player].hp || 800),
       shield: 0
     },
     enemy: {
       key: cfg.enemy,
-      x: W - 2, y: H - 2,
+      x: W - 11, y: H - 11,
       hp: (CHARACTERS[cfg.enemy].hp || 800),
       shield: 0
     }
@@ -93,14 +93,14 @@
   /* ---------- 画布渲染（固定格子尺寸 + 拖动平移查看） ---------- */
   var canvas = document.getElementById('board');
   var ctx = canvas.getContext('2d');
-  var CELL = 22;              // 每格固定像素（地图保持放大比例）
+  var CELL = 26;              // 每格固定像素（地图保持放大比例）
   var camX = 0, camY = 0;     // 视野左上角（地图像素坐标）
   var mapPxW = W * CELL, mapPxH = H * CELL;
 
   function resize() {
     var box = canvas.parentElement;
-    canvas.width = Math.max(50, box.clientWidth - 8);
-    canvas.height = Math.max(50, box.clientHeight - 8);
+    canvas.width = Math.max(50, box.clientWidth - 4);
+    canvas.height = Math.max(50, box.clientHeight - 4);
     centerCam();
     draw();
   }
@@ -390,6 +390,12 @@
   });
 
   document.getElementById('btn-end-round').addEventListener('click', endRound);
+  document.getElementById('btn-toggle-left').addEventListener('click', function () {
+    document.querySelector('.left-col').classList.toggle('hidden-col');
+  });
+  document.getElementById('btn-toggle-right').addEventListener('click', function () {
+    document.querySelector('.right-col').classList.toggle('hidden-col');
+  });
   window.addEventListener('resize', resize);
 
   /* ---------- 初始化 ---------- */

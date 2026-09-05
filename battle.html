@@ -10,8 +10,12 @@
 <body class="battle-page">
   <div id="battle-top">
     <a class="menu-btn small" href="index.html">🏠 返回主菜单</a>
-    <span class="round-info" id="round-info">第 1 轮</span>
-    <button class="menu-btn small" id="btn-end-round">⏭ 结束回合</button>
+    <span class="round-info" id="round-info">第 1 轮<span class="version-tag" id="version-tag">v2</span></span>
+    <div style="display:flex;gap:8px;">
+      <button class="menu-btn small" id="btn-toggle-left">🕹 状态/移动面板</button>
+      <button class="menu-btn small" id="btn-toggle-right">⚡ 技能面板</button>
+      <button class="menu-btn small" id="btn-end-round">⏭ 结束回合</button>
+    </div>
   </div>
 
   <main id="battle-main">
