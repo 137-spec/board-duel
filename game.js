@@ -3,7 +3,7 @@
   var PREFIX = '《咒术回战》系列角色：';
   var MAP_OPTIONS = ['32x32', '50x50', '64x64']; // 目前提供三张地图（100x100 也可加入）
 
-  var sel = { map: null, player: null, special: null, assists: [] };
+  var sel = { map: null, player: null, enemy: null, special: null, assists: [] };
 
   function displayName(key) {
     return key.indexOf(PREFIX) === 0 ? key.slice(PREFIX.length) : key;
@@ -80,11 +80,33 @@
   /* ---------- 第 3 步：特技与援助 ---------- */
   var specialChips = document.getElementById('special-chips');
   var assistChips = document.getElementById('assist-chips');
+  var enemyChips = document.getElementById('enemy-chips');
   var summary = document.getElementById('loadout-summary');
   var btnStart = document.getElementById('btn-start');
   var btnBackChar = document.getElementById('btn-back-char');
 
   function renderLoadoutStep() {
+    // 敌方角色（选 1 个 或 随机）
+    enemyChips.innerHTML = '';
+    var randChip = document.createElement('span');
+    randChip.className = 'chip' + (sel.enemy === null ? ' selected' : '');
+    randChip.textContent = '🎲 随机';
+    randChip.addEventListener('click', function () {
+      sel.enemy = null;
+      renderLoadoutStep();
+    });
+    enemyChips.appendChild(randChip);
+    ready.forEach(function (key) {
+      var chip = document.createElement('span');
+      chip.className = 'chip' + (sel.enemy === key ? ' selected' : '');
+      chip.textContent = CHARACTERS[key].name;
+      chip.addEventListener('click', function () {
+        sel.enemy = key;
+        renderLoadoutStep();
+      });
+      enemyChips.appendChild(chip);
+    });
+
     // 特技（选 1）
     specialChips.innerHTML = '';
     var sKeys = Object.keys(SPECIALS).filter(function (k) { return SPECIALS[k] && SPECIALS[k].kind !== 'empty'; });
@@ -123,21 +145,21 @@
   }
 
   function renderSummary() {
-    var enemy = ready[Math.floor(Math.random() * ready.length)];
+    var enemy = sel.enemy || ready[Math.floor(Math.random() * ready.length)];
     var sp = sel.special ? SPECIALS[sel.special].name : '未选';
     var as = sel.assists.length ? sel.assists.map(function (k) { return ASSISTS[k].name; }).join('、') : '未选';
     summary.innerHTML =
       '<h3>出战配置</h3>' +
       '<p>地图：<b>' + sel.map + '</b> ｜ 我方：<b>' + CHARACTERS[sel.player].name + '</b> ｜ 特技：<b>' + sp + '</b> ｜ 援助：<b>' + as + '</b></p>' +
-      '<p>敌方角色：<b>' + CHARACTERS[enemy].name + '</b>（随机）</p>' +
-      '<p class="muted">注：选角色时需要将角色放到起始格子的功能将在下一版加入；技能范围未编写前，战斗中技能仅作演示。</p>';
+      '<p>敌方角色：<b>' + CHARACTERS[enemy].name + '</b>' + (sel.enemy ? '' : '（随机分配）') + '</p>' +
+      '<p class="muted">注：技能命中可获奥义点；敌方有 AI 会在每回合结束后行动进攻。</p>';
   }
 
   var enemyLocked = null;
   btnStart.addEventListener('click', function () {
     if (!sel.map || !sel.player) { alert('请先选择地图和我方角色'); return; }
     var ready = readyChars();
-    var enemy = ready[Math.floor(Math.random() * ready.length)];
+    var enemy = sel.enemy || ready[Math.floor(Math.random() * ready.length)];
     var payload = {
       map: sel.map,
       player: sel.player,

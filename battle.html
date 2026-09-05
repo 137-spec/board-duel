@@ -70,6 +70,16 @@
   <script src="data/characters.js"></script>
   <script src="data/specials.js"></script>
   <script src="data/assists.js"></script>
+  <script src="data/skills.js"></script>
   <script src="battle.js"></script>
+
+  <div class="modal-mask hidden" id="game-over">
+    <div class="modal">
+      <h2 id="game-over-msg">对局结束</h2>
+      <p>选择继续挑战或返回主菜单</p>
+      <button class="menu-btn small" style="margin-bottom:10px;" onclick="location.reload()">🔄 再来一局</button>
+      <a class="menu-btn small" href="index.html" style="display:inline-flex;">🏠 返回主菜单</a>
+    </div>
+  </div>
 </body>
 </html>

@@ -1,4 +1,6 @@
 // 战斗界面：地图棋盘 + 左侧状态/移动 + 右侧技能
+// 范围规范：本格含范围→2=本体 3=范围；本格不含→1=本体 2=范围
+// 苍特殊：1=攻击范围 2=吸附范围；1与中心0也为吸附范围，中心0也是攻击范围
 (function () {
   var PREFIX = '《咒术回战》系列角色：';
 
@@ -29,27 +31,129 @@
   }
   if (!cfg.player || !cfg.enemy) { window.location.href = 'game.html'; return; }
 
-  // 每轮可移动格数 = 6 + 角色等级（等级最高按5级封顶；0级角色=6格）
+  /* ---------- 通用规则 ---------- */
+  // 每轮可移动格数 = 6 + 角色等级（最高按5级）
   function moveCapOf(key) {
     var c = CHARACTERS[key];
     var lv = (c && c.level) || 0;
     return 6 + Math.min(lv, 5);
   }
+  // 代表字
+  var REP_CHARS = { '五条悟': '五', '伏黑惠': '惠', '虎杖悠人': '悠', '宿傩': '傩', '乙骨优太': '乙', '伏黑甚尔': '甚' };
+  function repChar(key) {
+    var base = displayName(key).split('（')[0];
+    return REP_CHARS[base] || base.charAt(0);
+  }
+  function nameShort(key) {
+    return displayName(key).split('（')[0];
+  }
+
+  /* ---------- 技能效果表（数值取自角色设计 txt） ---------- */
+  function rangeKeyFor(skillName) {
+    if (skillName === '普攻') return '普攻范围';
+    return displayName(cfg.player) + skillName; // 如 五条悟（青年高专）苍
+  }
+  var CANG_AREA_KEY = displayName(cfg.player) + '“苍”范围'; // 文件名使用中文弯引号
+  var SKILL_EFFECTS = {
+    '普攻': { type: 'attack', dmg: 25, rangeKey: '普攻范围' },
+    '赫（自爆）': { type: 'hemi', dmg: 120, selfDmg: 75, rangeKey: rangeKeyFor('赫（自爆）') },
+    '苍（最大功率）': { type: 'attack', dmg: 350, rangeKey: rangeKeyFor('苍（最大功率）'), needOp: 6 },
+    '苍（定点）': { type: 'placeCang', rangeKey: rangeKeyFor('苍（定点）') },
+    '苍': { type: 'placeCang', rangeKey: rangeKeyFor('苍') }
+  };
+
+  /* ---------- 范围解析 ----------
+     返回：{own:[x,y], cells:[[dx,dy],...]} relative to own */
+  function parseRange(key) {
+    var g = SKILL_RANGES[key];
+    if (!g || !g.length) return null;
+    var ones = [], twos = [], threes = [];
+    for (var y = 0; y < g.length; y++) {
+      for (var x = 0; x < g[y].length; x++) {
+        var v = g[y][x];
+        if (v === 1) ones.push([x, y]);
+        else if (v === 2) twos.push([x, y]);
+        else if (v === 3) threes.push([x, y]);
+      }
+    }
+    var own = null, range = [];
+    if (threes.length) { // 本格含范围：2=本体 3=范围
+      own = twos.length === 1 ? twos[0] : (twos[twos.length - 1] || null);
+      range = threes;
+    } else if (twos.length) { // 本格不含范围：1=本体 2=范围
+      own = ones.length === 1 ? ones[0] : null;
+      range = twos;
+    }
+    if (!own) return null;
+    var seen = {};
+    var cells = [];
+    range.forEach(function (c) {
+      var dx = c[0] - own[0], dy = c[1] - own[1];
+      var k = dx + ',' + dy;
+      if (!seen[k]) { seen[k] = true; cells.push([dx, dy]); }
+    });
+    return { own: own, cells: cells };
+  }
+  /* 苍特殊范围：1=攻击 2=吸附；1与中心0也算吸附；中心0也算攻击 */
+  function parseCangArea(key) {
+    var g = SKILL_RANGES[key];
+    if (!g || !g.length) return null;
+    var ones = [], twos = [];
+    for (var y = 0; y < g.length; y++) {
+      for (var x = 0; x < g[y].length; x++) {
+        var v = g[y][x];
+        if (v === 1) ones.push([x, y]);
+        else if (v === 2) twos.push([x, y]);
+      }
+    }
+    if (!ones.length && !twos.length) return null;
+    var xs = ones.concat(twos).map(function (c) { return c[0]; });
+    var ys = ones.concat(twos).map(function (c) { return c[1]; });
+    var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+    var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+    var center = null;
+    for (var y2 = minY; y2 <= maxY; y2++) {
+      for (var x2 = minX; x2 <= maxX; x2++) {
+        if (g[y2][x2] === 0) { center = [x2, y2]; break; }
+      }
+      if (center) break;
+    }
+    if (!center) return null;
+    function off(c) { return [c[0] - center[0], c[1] - center[1]]; }
+    var attack = [off(center)];
+    var attract = [off(center)];
+    ones.forEach(function (c) { attack.push(off(c)); attract.push(off(c)); });
+    twos.forEach(function (c) { attract.push(off(c)); });
+    return { center: center, attack: attack, attract: attract };
+  }
+
+  var rangeCache = {};
+  function getRange(key) {
+    if (!(key in rangeCache)) rangeCache[key] = parseRange(key);
+    return rangeCache[key];
+  }
+  var cangArea = parseCangArea(CANG_AREA_KEY);
+
   /* ---------- 对局状态 ---------- */
   var mapData = GAME_MAPS[cfg.map] || GAME_MAPS['50x50'];
   var W = mapData[0].length, H = mapData.length;
   var state = {
     round: 1,
-    ap: 1,               // 行动点
-    sp: 1,               // 技能点
-    op: 2,               // 奥义点（开局2）
-    movedThisRound: 0,   // 本轮已移动格数
-    moveCap: moveCapOf(cfg.player), // 移动上限（随角色等级：6+Lv）
+    ap: 1,
+    sp: 1,
+    op: 2,                          // 奥义点（开局2，命中+1，上限6）
+    movedThisRound: 0,
+    moveCap: moveCapOf(cfg.player),
     selected: 'player',
-    dirIndex: 0,         // 默认 右
-    uni: { attack: false, block: false }, // 通用技能本轮使用标记（每轮各1次）
-    specialUsedRound: 0, // 特技上次使用轮（CD=1轮）
-    assistUsedRound: {}, // 援助上次使用轮（CD=7轮）
+    dirIndex: 0,
+    uni: { attack: false, block: false },  // 通用技能每轮各1次
+    usedSkill: false,               // 使用技能后本轮不可再移动/放技能
+    specialUsedRound: 0,
+    assistUsedRound: {},
+    turn: 'player',
+    gameOver: false,
+    aiming: null,                   // {name, cells:[{x,y}]}
+    cang: null,                     // 场上“苍” {x,y}
     player: {
       key: cfg.player,
       x: 10, y: 10,
@@ -77,29 +181,15 @@
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2600);
+    toastTimer = setTimeout(function () { t.classList.remove('show'); }, 3000);
   }
-  function nameShort(key) {
-    return displayName(key).split('（')[0];
-  }
-  // 角色代表字：五条悟→五 伏黑惠→惠 宿傩→傩 …（未配置的取名字首字）
-  var REP_CHARS = { '五条悟': '五', '伏黑惠': '惠', '虎杖悠人': '悠', '宿傩': '傩', '乙骨优太': '乙', '伏黑甚尔': '甚' };
-  function repChar(key) {
-    var base = nameShort(key);
-    return REP_CHARS[base] || base.charAt(0);
-  }
-  // 无范围/无方向技能登记：
-  // 1) 描述含"自己/自身" → 自动识别为自身类
-  // 2) 传送到已有对象/目标已确定（如 苍（瞬）传送到苍的位置）→ 在此登记
-  var NO_RANGE_SKILLS = { '苍（瞬）': true };
-  function skillIsSelf(name, detail) {
+  function isSelfSkill(name, detail) {
     if (NO_RANGE_SKILLS[name]) return true;
     var d = detail || '';
-    // 描述里有范围/格子/目标/敌人的 → 属于范围类（即使是半个自身效果，如赫自爆）
     if (/范围|格子|目标|敌人/.test(d)) return false;
     return /自[己身]/.test(d);
   }
-
+  var NO_RANGE_SKILLS = { '苍（瞬）': true };
   function charSkillList(key) {
     var c = CHARACTERS[key];
     if (!c || c.kind === 'empty') return [];
@@ -108,12 +198,41 @@
       return n !== '普攻' && n !== '格挡';
     });
   }
+  function inBounds(x, y) { return x >= 0 && y >= 0 && x < W && y < H; }
+  function isEnemyAt(x, y) { return state.enemy.x === x && state.enemy.y === y; }
+  function isPlayerAt(x, y) { return state.player.x === x && state.player.y === y; }
+  function applyDamage(u, amount) {
+    var shield = u.shield || 0;
+    var dmg = amount;
+    if (shield > 0) {
+      var absorb = Math.min(shield, dmg);
+      u.shield = shield - absorb;
+      dmg -= absorb;
+    }
+    u.hp = Math.max(0, u.hp - dmg);
+    return dmg;
+  }
+  function checkEnd() {
+    if (state.gameOver) return;
+    if (state.player.hp <= 0) gameOver('💀 你被击败了……（' + nameShort(cfg.enemy) + ' 获胜）');
+    else if (state.enemy.hp <= 0) gameOver('🏆 胜利！' + nameShort(cfg.player) + ' 击败了 ' + nameShort(cfg.enemy) + '！');
+  }
+  function gameOver(msg) {
+    state.gameOver = true;
+    state.aiming = null;
+    var box = document.getElementById('game-over');
+    document.getElementById('game-over-msg').textContent = msg;
+    box.classList.remove('hidden');
+    draw();
+    renderStatus();
+    toast(msg);
+  }
 
-  /* ---------- 画布渲染（固定格子尺寸 + 拖动平移查看） ---------- */
+  /* ---------- 画布渲染（白底黑线 + 拖动平移） ---------- */
   var canvas = document.getElementById('board');
   var ctx = canvas.getContext('2d');
-  var CELL = 26;              // 每格固定像素（地图保持放大比例）
-  var camX = 0, camY = 0;     // 视野左上角（地图像素坐标）
+  var CELL = 26;
+  var camX = 0, camY = 0;
   var mapPxW = W * CELL, mapPxH = H * CELL;
 
   function resize() {
@@ -129,17 +248,14 @@
     camY = maxY <= 0 ? (mapPxH - canvas.height) / 2 : Math.max(0, Math.min(maxY, camY));
   }
   function centerCam() {
-    // 开局视野锁定我方角色
     camX = (state.player.x + 0.5) * CELL - canvas.width / 2;
     camY = (state.player.y + 0.5) * CELL - canvas.height / 2;
     clampCam();
   }
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // 白底（高对比棋盘风）
     ctx.fillStyle = '#f4f4f4';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // 只画视野内的格子（大图也流畅）
     var x0 = Math.max(0, Math.floor(camX / CELL));
     var y0 = Math.max(0, Math.floor(camY / CELL));
     var x1 = Math.min(W - 1, Math.ceil((camX + canvas.width) / CELL));
@@ -147,13 +263,40 @@
     for (var y = y0; y <= y1; y++) {
       for (var x = x0; x <= x1; x++) {
         var v = mapData[y][x];
-        if (v !== 0) { // 障碍物（后续读障碍）
+        if (v !== 0) {
           ctx.fillStyle = '#8a5a26';
           ctx.fillRect(x * CELL - camX + 1, y * CELL - camY + 1, CELL - 2, CELL - 2);
         }
       }
     }
-    // 黑网格线（增强对比）
+    // 苍的区域提示（吸附=蓝 攻击=红）
+    if (state.cang && cangArea) {
+      cangArea.attract.forEach(function (o) {
+        var px = (state.cang.x + o[0]) * CELL - camX, py = (state.cang.y + o[1]) * CELL - camY;
+        if (px > -CELL && py > -CELL && px < canvas.width + CELL && py < canvas.height + CELL) {
+          ctx.fillStyle = 'rgba(80,170,255,.22)';
+          ctx.fillRect(px + 1, py + 1, CELL - 2, CELL - 2);
+        }
+      });
+      cangArea.attack.forEach(function (o) {
+        var px = (state.cang.x + o[0]) * CELL - camX, py = (state.cang.y + o[1]) * CELL - camY;
+        if (px > -CELL && py > -CELL && px < canvas.width + CELL && py < canvas.height + CELL) {
+          ctx.fillStyle = 'rgba(255,80,80,.30)';
+          ctx.fillRect(px + 1, py + 1, CELL - 2, CELL - 2);
+        }
+      });
+    }
+    // 瞄准高亮
+    if (state.aiming) {
+      state.aiming.cells.forEach(function (c) {
+        var px = c.x * CELL - camX, py = c.y * CELL - camY;
+        if (px > -CELL && py > -CELL && px < canvas.width + CELL && py < canvas.height + CELL) {
+          ctx.fillStyle = isEnemyAt(c.x, c.y) ? 'rgba(255,120,0,.55)' : 'rgba(60,220,120,.45)';
+          ctx.fillRect(px + 1, py + 1, CELL - 2, CELL - 2);
+        }
+      });
+    }
+    // 网格线
     ctx.strokeStyle = 'rgba(0,0,0,.45)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -168,9 +311,26 @@
       ctx.lineTo(canvas.width, sy);
     }
     ctx.stroke();
-    // 单位（代表字显示）
+    drawCang();
     drawUnit(state.player, '#3f8cff', '#eaf4ff');
     drawUnit(state.enemy, '#ff5252', '#ffecec');
+  }
+  function drawCang() {
+    if (!state.cang) return;
+    var cx = (state.cang.x + 0.5) * CELL - camX, cy = (state.cang.y + 0.5) * CELL - camY;
+    if (cx < -24 || cy < -24 || cx > canvas.width + 24 || cy > canvas.height + 24) return;
+    ctx.beginPath();
+    ctx.arc(cx, cy, CELL * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = '#2b1a6b';
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.max(10, Math.round(CELL * 0.5)) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('苍', cx, cy);
   }
   function drawUnit(u, fill, textColor) {
     var cx = (u.x + 0.5) * CELL - camX, cy = (u.y + 0.5) * CELL - camY;
@@ -181,7 +341,7 @@
     if (isSel) {
       ctx.beginPath();
       ctx.arc(cx, cy, r + 3, 0, Math.PI * 2);
-      ctx.strokeStyle = '#ffd75e';
+      ctx.strokeStyle = '#ff9500';
       ctx.lineWidth = 3;
       ctx.stroke();
     }
@@ -212,20 +372,21 @@
     html += '<div class="stat-line"><span class="label">血量</span><b>' + u.hp + ' / ' + (c.hp || '—') + '</b></div>';
     if (state.selected === 'player') {
       html += '<div class="stat-line"><span class="label">行动点</span><span class="dots">'
-        + (state.ap > 0 ? '●' : '○') + '（本轮剩余移动步数 ' + Math.max(0, state.moveCap - state.movedThisRound) + '/' + state.moveCap + '）</span></div>';
-      html += '<div class="stat-line"><span class="label">移动上限</span><b>6+等级' + ((CHARACTERS[cfg.player] && CHARACTERS[cfg.player].level) || 0) + ' = ' + state.moveCap + ' 格</b></div>';
+        + (state.ap > 0 ? '●' : '○') + '（剩余步数 ' + Math.max(0, state.moveCap - state.movedThisRound) + '/' + state.moveCap + '）</span></div>';
+      html += '<div class="stat-line"><span class="label">移动上限</span><b>6+等级' + ((c && c.level) || 0) + ' = ' + state.moveCap + ' 格</b></div>';
       html += '<div class="stat-line"><span class="label">技能点</span><span class="dots">'
         + '●'.repeat(state.sp) + '○'.repeat(3 - state.sp) + ' ' + state.sp + '/3</span></div>';
       html += '<div class="stat-line"><span class="label">奥义点</span><span class="dots">'
         + '●'.repeat(state.op) + '○'.repeat(6 - state.op) + ' ' + state.op + '/6</span></div>';
+      html += '<div class="stat-line"><span class="label">回合</span><b>' + (state.turn === 'player' ? '我方行动' : '敌方行动') + '</b></div>';
     }
     html += '<div class="pad-label">目前持有状态</div><div class="chips">';
     var chips = [];
     if (u.shield > 0) chips.push('🛡 护盾 ' + u.shield);
+    if (state.cang) chips.push('🌀 场上有「苍」');
     if (state.selected === 'player') {
-      if (cfg.special && state.specialUsedRound > 0 && state.round - state.specialUsedRound < 2) {
-        chips.push('⏳ 特技冷却中');
-      }
+      if (state.usedSkill) chips.push('🚫 已用技能·不可移动');
+      if (state.specialUsedRound > 0 && state.round - state.specialUsedRound < 2) chips.push('⏳ 特技冷却中');
       (cfg.assists || []).forEach(function (k) {
         var last = state.assistUsedRound[k] || 0;
         if (last > 0) {
@@ -248,24 +409,23 @@
 
   /* ---------- 移动 ---------- */
   function movePlayer(dx, dy) {
+    if (state.turn !== 'player' || state.gameOver) return;
+    if (state.usedSkill) { toast('🚫 使用技能后本轮不可再进行移动'); return; }
     var u = state.player;
     var nx = u.x + dx, ny = u.y + dy;
-    if (nx < 0 || ny < 0 || nx >= W || ny >= H) { toast('⚠ 到达地图边界，无法移动'); return; }
-    if (mapData[ny][nx] !== 0) { toast('⚠ 该格有障碍物，无法移动'); return; }
-    if (state.enemy.x === nx && state.enemy.y === ny) { toast('⚠ 敌方单位挡住去路'); return; }
-    if (state.movedThisRound >= state.moveCap || state.ap <= 0) { toast('⚠ 本轮行动点/步数已用完'); return; }
+    if (!inBounds(nx, ny)) { toast('⚠ 到达地图边界'); return; }
+    if (mapData[ny][nx] !== 0) { toast('⚠ 该格有障碍物'); return; }
+    if (isEnemyAt(nx, ny)) { toast('⚠ 敌方单位挡住去路'); return; }
+    if (state.movedThisRound >= state.moveCap || state.ap <= 0) { toast('⚠ 本轮步数已用完'); return; }
     u.x = nx; u.y = ny;
     state.movedThisRound++;
     if (state.movedThisRound >= state.moveCap) state.ap = 0;
     draw();
     renderStatus();
-    toast('我方移动到 (' + nx + ',' + ny + ') 剩余步数 ' + Math.max(0, state.moveCap - state.movedThisRound));
+    toast('我方移动到 (' + nx + ',' + ny + ') 剩余 ' + Math.max(0, state.moveCap - state.movedThisRound) + ' 步');
   }
 
-  /* ---------- 技能 ----------
-     两类技能：
-     1）自身类（格挡/治疗自己等）→ 无范围无方向，直接生效
-     2）范围类（普攻/领域/召唤等）→ 需要范围与方向（范围尚未编写，先记录方向） */
+  /* ---------- 技能 ---------- */
   function useSelfSkill(name, hint) {
     toast('「' + name + '」对自身使用：直接生效，无需范围与方向' + (hint ? '（' + hint + '）' : ''));
   }
@@ -274,12 +434,82 @@
     toast('「' + name + '」技能范围尚未编写 —— 已记录释放朝向：' + dir.label + (extra ? '（' + extra + '）' : ''));
   }
 
+  function startAiming(name) {
+    var eff = SKILL_EFFECTS[name];
+    if (!eff || !eff.rangeKey) { useRangeSkill(name); return; }
+    var info = getRange(eff.rangeKey);
+    if (!info) { toast('没有找到「' + name + '」的范围数据（请到技能范围临时文件里编写）'); return; }
+    var cells = [];
+    info.cells.forEach(function (o) {
+      var x = state.player.x + o[0], y = state.player.y + o[1];
+      if (inBounds(x, y)) cells.push({ x: x, y: y });
+    });
+    state.aiming = { name: name, cells: cells, eff: eff };
+    draw();
+    toast('「' + name + '」瞄准中：点击高亮格子选择目标/位置（点空白处取消）');
+  }
+
+  function earnOp() {
+    state.op = Math.min(6, state.op + 1); // 技能命中获得奥义点
+  }
+
+  function executeCast(cell) {
+    var aim = state.aiming;
+    if (!aim) return;
+    var eff = aim.eff;
+    var name = aim.name;
+    state.aiming = null;
+    state.usedSkill = true;
+
+    if (eff.type === 'attack') {
+      if (eff.needOp && state.op < eff.needOp) {
+        toast('⚠ 「' + name + '」奥义点不足（需要 ' + eff.needOp + '，当前 ' + state.op + '）');
+        state.usedSkill = false;
+        state.aiming = null;
+        return;
+      }
+      if (eff.needOp) state.op = 0; // 大招消耗全部奥义点
+      if (!isEnemyAt(cell.x, cell.y)) { toast('对空使用「' + name + '」……还是刷新一下吧（请瞄准敌人）'); state.usedSkill = false; draw(); renderStatus(); return; }
+      var dmg = applyDamage(state.enemy, eff.dmg);
+      earnOp();
+      toast('⚔️「' + name + '」命中！对 ' + nameShort(cfg.enemy) + ' 造成 ' + dmg + ' 点伤害（护盾吸收后）');
+      checkEnd();
+    } else if (eff.type === 'hemi') {
+      var selfDmg = Math.min(state.player.hp * 1, applyDamage(state.player, eff.selfDmg));
+      var enemyHit = isEnemyAt(cell.x, cell.y);
+      var enemyDmg = enemyHit ? applyDamage(state.enemy, eff.dmg) : 0;
+      if (enemyHit) earnOp();
+      toast('💥「' + name + '」自身受到 ' + selfDmg + ' 伤害' + (enemyHit ? '，对 ' + nameShort(cfg.enemy) + ' 造成 ' + enemyDmg + ' 伤害' : '（范围内没有敌人）'));
+      checkEnd();
+    } else if (eff.type === 'placeCang') {
+      if (state.cang) { toast('⚠ 场上已存在「苍」（一个技能只能同时存在一颗）'); state.usedSkill = false; draw(); return; }
+      state.cang = { x: cell.x, y: cell.y };
+      var msg = '🌀「' + name + '」在 (' + cell.x + ',' + cell.y + ') 生成「苍」！';
+      if (cangArea) {
+        // 刚生成时“刚进入”判定：苍的吸附范围内敌人引燃？按规则：进入伤害范围立刻75
+        var inside = cangArea.attack.some(function (o) { return state.enemy.x === state.cang.x + o[0] && state.enemy.y === state.cang.y + o[1]; });
+        if (inside) {
+          var d = applyDamage(state.enemy, 75);
+          earnOp();
+          msg += ' 敌人刚进入伤害范围，受到 ' + d + ' 点伤害！';
+        }
+      }
+      toast(msg);
+      checkEnd();
+    }
+    draw();
+    renderStatus();
+    renderSkills();
+  }
+
+  /* ---------- 技能列表 ---------- */
   function renderSkills() {
     var list = document.getElementById('skill-list');
     var html = '';
     html += '<div class="skill-group-title">通用技能</div>';
-    html += '<button class="skill-btn" data-skill="普攻">⚔️ 普攻<span class="cd">25 伤害 · 每轮1次</span></button>';
-    html += '<button class="skill-btn" data-skill="格挡">🛡 格挡<span class="cd">25 护盾 · 每轮1次</span></button>';
+    var atkUsed = state.uni.attack, blkUsed = state.uni.block;
+    html += '<button class="skill-btn" data-skill="普攻">⚔️ 普攻<span class="cd">' + (atkUsed ? '本轮已用' : '可释放 · 25伤害') + '</span></button>';
+    html += '<button class="skill-btn" data-skill="格挡">🛡 格挡<span class="cd">' + (blkUsed ? '本轮已用' : '可释放 · 25护盾') + '</span></button>';
 
     if (cfg.special) {
       var s = SPECIALS[cfg.special];
@@ -302,33 +532,45 @@
     if (own.length) {
       html += '<div class="skill-group-title">角色技能（' + nameShort(cfg.player) + '）</div>';
       own.forEach(function (sk) {
-        var self = skillIsSelf(sk.name, sk.detail);
-        var badge = self ? '无范围' : '范围待定';
+        var eff = SKILL_EFFECTS[sk.name];
+        var hasRange = eff && eff.rangeKey && getRange(eff.rangeKey);
+        var self = isSelfSkill(sk.name, sk.detail);
+        var badge;
+        if (hasRange) badge = eff.needOp ? '大招·需奥义点' : '可释放';
+        else if (self) badge = '无范围';
+        else badge = '范围待定';
         html += '<button class="skill-btn" data-skill="char" data-name="' + sk.name.replace(/"/g, '&quot;') + '">' +
           sk.name + '<span class="cd">' + badge + '</span></button>';
       });
     }
     list.innerHTML = html;
+  }
+
+  function listClick(list) {
     list.addEventListener('click', function (e) {
       var btn = e.target.closest ? e.target.closest('.skill-btn') : null;
       if (!btn) return;
+      if (state.gameOver) return;
+      if (state.turn !== 'player') { toast('⏳ 现在是敌方回合，请稍候'); return; }
       var kind = btn.getAttribute('data-skill');
 
+      if (state.usedSkill) {
+        toast('🚫 本轮已使用过技能，不能再释放其他技能（结束回合后可再用）');
+        return;
+      }
+
       if (kind === '格挡') {
-        // 自身类：无范围无方向，直接添加护盾（每轮1次）
         if (state.uni.block) { toast('⚠ 格挡本轮已使用过（每轮 1 次）'); return; }
         state.uni.block = true;
+        state.usedSkill = true;
         state.player.shield = (state.player.shield || 0) + 25;
         toast('🛡 格挡生效：为自身添加 25 点护盾（无范围，直接生效）');
         renderSkills(); renderStatus();
         return;
       }
       if (kind === '普攻') {
-        // 范围类：攻击目标（范围待定）
         if (state.uni.attack) { toast('⚠ 普攻本轮已使用过（每轮 1 次）'); return; }
-        state.uni.attack = true;
-        useRangeSkill('普攻', '通用技能·对范围内一名敌人');
-        renderSkills();
+        startAiming('普攻');
         return;
       }
       if (kind === '特技') {
@@ -361,11 +603,11 @@
         for (var i = 0; i < own.length; i++) {
           if (own[i].name === name) { detail = own[i].detail || ''; break; }
         }
-        if (skillIsSelf(name, detail)) {
-          useSelfSkill(name, skillIsSelf(name, detail) && NO_RANGE_SKILLS[name] ? '目标已确定（如传送至苍的位置）' : '');
-        } else {
-          useRangeSkill(name);
-        }
+        var eff = SKILL_EFFECTS[name];
+        var hasRange = eff && eff.rangeKey && getRange(eff.rangeKey);
+        if (hasRange) { startAiming(name); return; }
+        if (isSelfSkill(name, detail)) { state.usedSkill = true; useSelfSkill(name, NO_RANGE_SKILLS[name] ? '目标已确定（如传送至苍的位置）' : ''); renderStatus(); }
+        else useRangeSkill(name);
       }
     });
   }
@@ -380,20 +622,139 @@
     });
   }
 
-  /* ---------- 回合 ---------- */
-  function endRound() {
+  /* ---------- 敌方 AI ---------- */
+  function enemyInPlayerRange() {
+    var info = getRange('普攻范围');
+    if (!info) return Math.abs(state.player.x - state.enemy.x) + Math.abs(state.player.y - state.enemy.y) <= 1;
+    return info.cells.some(function (o) {
+      return state.player.x === state.enemy.x + o[0] && state.player.y === state.enemy.y + o[1];
+    });
+  }
+  function enemyStep() {
+    var e = state.enemy, p = state.player;
+    var dx = p.x - e.x, dy = p.y - e.y;
+    // 优先走横向或纵向（不能斜走）
+    var moved = false;
+    var tries = [];
+    if (dx !== 0) tries.push([dx > 0 ? 1 : -1, 0]);
+    if (dy !== 0) tries.push([0, dy > 0 ? 1 : -1]);
+    for (var i = 0; i < tries.length; i++) {
+      var nx = e.x + tries[i][0], ny = e.y + tries[i][1];
+      if (inBounds(nx, ny) && mapData[ny][nx] === 0 && !isPlayerAt(nx, ny)) { e.x = nx; e.y = ny; moved = true; break; }
+    }
+    return moved;
+  }
+  function enemyTurn() {
+    if (state.gameOver) return;
+    state.turn = 'enemy';
+    draw();
+    renderStatus();
+    toast('⏳ ' + nameShort(cfg.enemy) + ' 开始行动…');
+    var cap = moveCapOf(cfg.enemy);
+    var steps = 0;
+    var iv = setInterval(function () {
+      if (state.gameOver) { clearInterval(iv); return; }
+      if (enemyInPlayerRange()) {
+        clearInterval(iv);
+        // 普攻
+        var dmg = applyDamage(state.player, 25);
+        toast('⚔️ ' + nameShort(cfg.enemy) + ' 对你普攻：造成 ' + dmg + ' 点伤害' + (state.player.hp <= 0 ? '' : '（护盾吸收剩余值已结算）'));
+        renderStatus();
+        checkEnd();
+        if (!state.gameOver) setTimeout(endEnemyTurn, 900);
+        else { clearInterval(iv); }
+        return;
+      }
+      if (steps < cap) {
+        var moved = enemyStep();
+        steps++;
+        draw();
+        if (!moved) { // 走不动了 → 结束
+          clearInterval(iv);
+          setTimeout(endEnemyTurn, 500);
+        }
+        return;
+      }
+      clearInterval(iv);
+      setTimeout(endEnemyTurn, 400);
+    }, 320);
+  }
+  function endEnemyTurn() {
+    // 苍的每轮结束效果：敌人在攻击范围则75伤害
+    if (state.cang && cangArea && !state.gameOver) {
+      var inside = cangArea.attack.some(function (o) {
+        return state.enemy.x === state.cang.x + o[0] && state.enemy.y === state.cang.y + o[1];
+      });
+      if (inside) {
+        var d = applyDamage(state.enemy, 75);
+        earnOp();
+        toast('🌀「苍」每轮结束效果：' + nameShort(cfg.enemy) + ' 受到 ' + d + ' 点伤害');
+        checkEnd();
+      }
+    }
+    if (state.gameOver) return;
     state.round++;
     state.ap = 1;
     state.sp = Math.min(3, state.sp + 1);
     state.movedThisRound = 0;
-    state.uni = { attack: false, block: false }; // 通用技能每轮重置
+    state.uni = { attack: false, block: false };
+    state.usedSkill = false;
+    state.turn = 'player';
     document.getElementById('round-info').textContent = '第 ' + state.round + ' 轮';
     draw();
     renderStatus();
-    toast('⏭ 第 ' + state.round + ' 轮开始：+1 行动点，+1 技能点（' + state.sp + '/3）');
+    toast('⏭ 第 ' + state.round + ' 轮开始：你的回合！');
   }
 
-  /* ---------- 事件绑定 ---------- */
+  /* ---------- 拖动平移 / 点击 ---------- */
+  var dragState = null;
+  function startDrag(clientX, clientY) {
+    dragState = { sx: clientX, sy: clientY, camX: camX, camY: camY, moved: 0 };
+    canvas.classList.add('dragging');
+  }
+  function moveDrag(clientX, clientY) {
+    if (!dragState) return;
+    var dx = clientX - dragState.sx, dy = clientY - dragState.sy;
+    dragState.moved += Math.abs(dx) + Math.abs(dy);
+    camX = dragState.camX - dx;
+    camY = dragState.camY - dy;
+    clampCam();
+    draw();
+  }
+  function endDrag(clientX, clientY) {
+    if (!dragState) return;
+    var moved = dragState.moved;
+    dragState = null;
+    canvas.classList.remove('dragging');
+    if (moved < 6) {
+      var rect = canvas.getBoundingClientRect();
+      var gx = Math.floor((clientX - rect.left + camX) / CELL);
+      var gy = Math.floor((clientY - rect.top + camY) / CELL);
+      if (state.aiming) {
+        var hit = state.aiming.cells.some(function (c) { return c.x === gx && c.y === gy; });
+        if (hit) executeCast({ x: gx, y: gy });
+        else { state.aiming = null; draw(); toast('已取消瞄准'); }
+        return;
+      }
+      if (isPlayerAt(gx, gy)) selectUnit('player');
+      else if (isEnemyAt(gx, gy)) selectUnit('enemy');
+    }
+  }
+  canvas.addEventListener('mousedown', function (e) { startDrag(e.clientX, e.clientY); e.preventDefault(); });
+  canvas.addEventListener('mousemove', function (e) { moveDrag(e.clientX, e.clientY); });
+  window.addEventListener('mouseup', function (e) { endDrag(e.clientX, e.clientY); });
+  canvas.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+  canvas.addEventListener('touchmove', function (e) {
+    if (e.touches.length === 1) { moveDrag(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
+  }, { passive: false });
+  canvas.addEventListener('touchend', function (e) {
+    var t = e.changedTouches[0];
+    endDrag(t ? t.clientX : 0, t ? t.clientY : 0);
+  });
+
+  /* ---------- 战斗事件 ---------- */
   document.getElementById('m-up').addEventListener('click', function () { movePlayer(0, -1); });
   document.getElementById('m-down').addEventListener('click', function () { movePlayer(0, 1); });
   document.getElementById('m-left').addEventListener('click', function () { movePlayer(-1, 0); });
@@ -417,49 +778,11 @@
   document.getElementById('sel-me').addEventListener('click', function () { selectUnit('player'); });
   document.getElementById('sel-enemy').addEventListener('click', function () { selectUnit('enemy'); });
 
-  /* ---------- 按住拖动平移地图 / 轻点选中单位 ---------- */
-  var dragState = null;
-  function startDrag(clientX, clientY) {
-    dragState = { sx: clientX, sy: clientY, camX: camX, camY: camY, moved: 0 };
-    canvas.classList.add('dragging');
-  }
-  function moveDrag(clientX, clientY) {
-    if (!dragState) return;
-    var dx = clientX - dragState.sx, dy = clientY - dragState.sy;
-    dragState.moved += Math.abs(dx) + Math.abs(dy);
-    camX = dragState.camX - dx;
-    camY = dragState.camY - dy;
-    clampCam();
-    draw();
-  }
-  function endDrag(clientX, clientY) {
-    if (!dragState) return;
-    var moved = dragState.moved;
-    dragState = null;
-    canvas.classList.remove('dragging');
-    if (moved < 6) { // 基本没动 → 视为点击选中
-      var rect = canvas.getBoundingClientRect();
-      var gx = Math.floor((clientX - rect.left + camX) / CELL);
-      var gy = Math.floor((clientY - rect.top + camY) / CELL);
-      if (state.player.x === gx && state.player.y === gy) selectUnit('player');
-      else if (state.enemy.x === gx && state.enemy.y === gy) selectUnit('enemy');
-    }
-  }
-  canvas.addEventListener('mousedown', function (e) { startDrag(e.clientX, e.clientY); e.preventDefault(); });
-  canvas.addEventListener('mousemove', function (e) { moveDrag(e.clientX, e.clientY); });
-  window.addEventListener('mouseup', function (e) { endDrag(e.clientX, e.clientY); });
-  canvas.addEventListener('touchstart', function (e) {
-    if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY);
-  }, { passive: true });
-  canvas.addEventListener('touchmove', function (e) {
-    if (e.touches.length === 1) { moveDrag(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
-  }, { passive: false });
-  canvas.addEventListener('touchend', function (e) {
-    var t = e.changedTouches[0];
-    endDrag(t ? t.clientX : 0, t ? t.clientY : 0);
+  document.getElementById('btn-end-round').addEventListener('click', function () {
+    if (state.gameOver) return;
+    if (state.turn !== 'player') { toast('⏳ 敌方回合进行中…'); return; }
+    enemyTurn();
   });
-
-  document.getElementById('btn-end-round').addEventListener('click', endRound);
   document.getElementById('btn-toggle-left').addEventListener('click', function () {
     document.querySelector('.left-col').classList.toggle('hidden-col');
   });
@@ -469,9 +792,10 @@
   window.addEventListener('resize', resize);
 
   /* ---------- 初始化 ---------- */
+  listClick(document.getElementById('skill-list'));
   renderSkills();
   renderDir();
   renderStatus();
   resize();
-  toast('第 1 轮开始！方向键移动 · 按住中间地图拖动查看 · 右半边选择技能（范围稍后补全）');
+  toast('第 1 轮开始！移动 · 点击技能选目标 · 结束回合后敌方会行动');
 })();
