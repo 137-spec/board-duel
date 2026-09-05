@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>《咒术回战》系列特技介绍 - 同人棋盘对决</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="content-page">
+  <div class="wrap">
+    <header class="page-header">
+      <a class="menu-btn small" href="skills.html">← 返回特技介绍</a>
+      <span class="page-title">《咒术回战》系列特技介绍</span>
+    </header>
+
+    <div class="jjk-note">以下为《咒术回战》系列已编写的特技：</div>
+    <div id="skill-cards"></div>
+
+    <section class="card">
+      <h2>如何补充特技</h2>
+      <p class="muted">在 <code>E:\同人游戏制作开发\《咒术回战》系列特技设计</code> 目录下新建 txt，第一行写特技名称，下面写说明。然后双击 <code>convert.bat</code>，这里就会自动出现。</p>
+    </section>
+  </div>
+
+  <script src="data/specials.js"></script>
+  <script>
+    (function () {
+      var box = document.getElementById('skill-cards');
+      var keys = Object.keys(SPECIALS);
+      var html = '';
+      var count = 0;
+      keys.forEach(function (key) {
+        var s = SPECIALS[key];
+        if (!s || s.kind === 'empty') return;
+        count++;
+        var lines = (s.raw || '').split('\n');
+        var text = lines.slice(1).join('\n').trim();
+        html += '<section class="card">' +
+          '<h2>' + s.name + '</h2>' +
+          '<p style="white-space:pre-wrap;">' + text.replace(/</g, '&lt;') + '</p>' +
+          '</section>';
+      });
+      if (count === 0) {
+        box.innerHTML = '<div class="jjk-note">暂未编写特技，等待补充…</div>';
+      } else {
+        box.innerHTML = html;
+      }
+    })();
+  </script>
+</body>
+</html>

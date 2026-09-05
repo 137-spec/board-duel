@@ -16,6 +16,11 @@
     <div class="jjk-note">以下规则仅对《咒术回战》系列角色生效：</div>
 
     <section class="card">
+      <h2>关于咒力</h2>
+      <p>如果不明确标注，则默认该角色<b>拥有咒力</b>。</p>
+    </section>
+
+    <section class="card">
       <h2>黑闪</h2>
       <ul>
         <li>当角色拥有<b>咒力</b>并且使用<b>近战攻击</b>命中敌方时（只有近战伤害能触发），会触发一次黑闪判定。判定概率为 <b>1％</b>。</li>
@@ -56,18 +61,65 @@
     </section>
 
     <section class="card">
-      <h2>系列角色一览</h2>
-      <p class="muted">以下系列角色设定文件已建立，具体设定待补充：</p>
+      <h2>正向能量伤害</h2>
+      <p>若<b>咒灵角色</b>受到了正向能量伤害，则会令此次伤害 <b>×3</b>。</p>
+    </section>
+
+    <section class="card">
+      <h2>咒词吟唱</h2>
+      <p>特定技能可以进行<b>咒词吟唱</b>，吟唱之后技能效果改变。吟唱咒词需要消耗 <b>1 点技能点</b>。</p>
+    </section>
+
+    <section class="card">
+      <h2>封闭式领域</h2>
       <ul>
-        <li>五条悟（新宿决战）</li>
-        <li>五条悟（最强）</li>
-        <li>五条悟（觉醒）</li>
-        <li>五条悟（青年高专）</li>
-        <li>伏黑甚尔（天与暴君）</li>
-        <li>虎杖悠人（宿傩）</li>
-        <li>虎杖悠人（高专）</li>
+        <li>以自身为中心展开范围为 <b>5 格</b>的封闭式领域。若敌人处于 7 格内，则直接将敌人拉入领域内。</li>
+        <li>领域存在结界，结界视为一个障碍物。<b>从领域内部攻击结界时，结界无法被破坏</b>；从领域外部攻击结界时，一击就会将领域破坏。</li>
+        <li>领域结束之后会进入<b>术式熔断</b>：所有技能都不可使用（通用技能和特意标注不受熔断影响的技能除外）。熔断持续 <b>5 轮</b>，可以通过<b>修复熔断</b>提前结束。</li>
+        <li>领域内可以为自己赋予<b>必中效果</b>：选择一名敌人，在领域内必定打中他。但当对方也展开领域时，必中会直接失效（除非特殊说明）。</li>
       </ul>
     </section>
+
+    <section class="card">
+      <h2>开放式领域</h2>
+      <ul>
+        <li>以自身为中心展开范围为 <b>15 格</b>的开放式领域。开放式领域不存在结界，可以直接跑出去。</li>
+        <li>领域结束之后会进入<b>术式熔断</b>：所有技能都不可使用（通用技能和特意标注不受熔断影响的技能除外）。熔断持续 <b>5 轮</b>，可以通过<b>修复熔断</b>提前结束。</li>
+        <li><b>封闭式领域绝对无法对抗开放式领域</b>：如果封闭式领域在开放式领域内，只要展开了就会崩溃（除非特殊说明）。</li>
+        <li>领域内可以为自己赋予<b>必中效果</b>：选择一名敌人，在领域内必定打中他。但当对方也展开领域时，必中会直接失效（除非特殊说明）。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>咒力体</h2>
+      <p>拥有咒力但是没有生命值的实体。<b>不算做障碍物</b>，但是一般有特殊功能。</p>
+    </section>
+
+    <section class="card">
+      <h2>系列角色一览</h2>
+      <p class="muted" id="roster-note">加载中…</p>
+      <ul id="roster-list"></ul>
+    </section>
   </div>
+
+  <script src="data/characters.js"></script>
+  <script>
+    (function () {
+      var prefix = '《咒术回战》系列角色：';
+      var list = document.getElementById('roster-list');
+      var note = document.getElementById('roster-note');
+      var ready = 0, total = 0, html = '';
+      Object.keys(CHARACTERS).forEach(function (key) {
+        var c = CHARACTERS[key];
+        total++;
+        if (c && c.kind !== 'empty') ready++;
+        var name = key.indexOf(prefix) === 0 ? key.slice(prefix.length) : key;
+        var badge = (c && c.kind !== 'empty') ? '已编写' : '待补充';
+        html += '<li>' + name + ' <span class="badge ' + (badge === '已编写' ? 'ok' : '') + '">' + badge + '</span></li>';
+      });
+      list.innerHTML = html;
+      note.textContent = '共 ' + total + ' 名，其中 ' + ready + ' 名已编写设定：';
+    })();
+  </script>
 </body>
 </html>

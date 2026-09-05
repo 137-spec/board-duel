@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>《咒术回战》系列援助介绍 - 同人棋盘对决</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="content-page">
+  <div class="wrap">
+    <header class="page-header">
+      <a class="menu-btn small" href="assists.html">← 返回援助介绍</a>
+      <span class="page-title">《咒术回战》系列援助介绍</span>
+    </header>
+
+    <div class="jjk-note">以下为《咒术回战》系列已编写的援助：</div>
+    <div id="assist-cards"></div>
+
+    <section class="card">
+      <h2>如何补充援助</h2>
+      <p class="muted">在 <code>E:\同人游戏制作开发\《咒术回战》系列援助设计</code> 目录下新建 txt，第一行写援助名称，下面写说明。然后双击 <code>convert.bat</code>，这里就会自动出现。</p>
+    </section>
+  </div>
+
+  <script src="data/assists.js"></script>
+  <script>
+    (function () {
+      var prefix = '《咒术回战》系列援助：';
+      var box = document.getElementById('assist-cards');
+      var keys = Object.keys(ASSISTS);
+      var html = '';
+      var count = 0;
+      keys.forEach(function (key) {
+        var a = ASSISTS[key];
+        if (!a || a.kind === 'empty') return;
+        count++;
+        var lines = (a.raw || '').split('\n');
+        var text = lines.slice(1).join('\n').trim();
+        html += '<section class="card">' +
+          '<h2>' + a.name + '</h2>' +
+          '<p style="white-space:pre-wrap;">' + text.replace(/</g, '&lt;') + '</p>' +
+          '</section>';
+      });
+      if (count === 0) {
+        box.innerHTML = '<div class="jjk-note">暂未编写援助，等待补充…</div>';
+      } else {
+        box.innerHTML = html;
+      }
+    })();
+  </script>
+</body>
+</html>

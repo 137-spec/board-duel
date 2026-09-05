@@ -1,0 +1,65 @@
+/* 单人对决流程页样式 */
+.step-nav {
+  font-size: .92rem;
+  color: var(--muted);
+}
+
+.step-box { display: flex; flex-direction: column; gap: 16px; }
+.step-box.hidden { display: none; }
+
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.option-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.04));
+  border: 1px solid rgba(255,215,94,.35);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: transform .15s, border-color .15s, box-shadow .15s;
+  user-select: none;
+}
+.option-card:hover { transform: translateY(-2px); border-color: var(--gold); box-shadow: 0 6px 20px rgba(255,205,80,.22); }
+.option-card.selected { border-color: #7ef07e; box-shadow: 0 0 0 2px rgba(126,240,126,.4); }
+.option-card.disabled { opacity: .45; cursor: not-allowed; }
+.option-card.disabled:hover { transform: none; border-color: rgba(255,215,94,.35); box-shadow: none; }
+.option-card .big { font-size: 1.25rem; font-weight: 800; color: var(--text); }
+.option-card .sub { font-size: .88rem; color: var(--muted); }
+
+.detail-box {
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  border: 1px solid rgba(255,255,255,.14);
+  border-left: 4px solid var(--gold2);
+  border-radius: 14px;
+  padding: 16px 20px;
+  min-height: 90px;
+}
+.detail-box h3 { color: var(--gold); font-size: 1.05rem; margin-bottom: 8px; }
+.detail-box p, .detail-box li { line-height: 1.75; font-size: .96rem; }
+.detail-box ul { padding-left: 20px; }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.chip {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
+  border: 1px solid rgba(255,215,94,.35);
+  cursor: pointer;
+  font-size: .98rem;
+  transition: border-color .15s, box-shadow .15s;
+  user-select: none;
+}
+.chip:hover { border-color: var(--gold); }
+.chip.selected { border-color: #7ef07e; box-shadow: 0 0 0 2px rgba(126,240,126,.35); }
+.chip.disabled { opacity: .4; cursor: not-allowed; }
+
+.start-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: space-between; }
+.summary { color: var(--text); line-height: 1.9; font-size: .98rem; }
+.summary b { color: #fff2c4; }

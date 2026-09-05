@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>对决中 - 同人棋盘对决</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="battle.css">
+</head>
+<body class="battle-page">
+  <div id="battle-top">
+    <a class="menu-btn small" href="index.html">🏠 返回主菜单</a>
+    <span class="round-info" id="round-info">第 1 轮</span>
+    <button class="menu-btn small" id="btn-end-round">⏭ 结束回合</button>
+  </div>
+
+  <main id="battle-main">
+    <!-- 左半边：状态区块 + 移动区块 -->
+    <section class="left-col">
+      <div class="panel" id="status-panel">
+        <h3>📊 状态区块</h3>
+        <div id="status-body"></div>
+      </div>
+
+      <div class="panel">
+        <h3>🕹 移动区块</h3>
+        <div class="pad-label">单格移动（控制我方角色）</div>
+        <div class="pad-grid" id="move-pad">
+          <span></span><button class="pad-btn" id="m-up">↑</button><span></span>
+          <button class="pad-btn" id="m-left">←</button><span></span><button class="pad-btn" id="m-right">→</button>
+          <span></span><button class="pad-btn" id="m-down">↓</button><span></span>
+        </div>
+        <div class="pad-label">技能释放方向（选择释放朝向）</div>
+        <div class="pad-grid" id="dir-pad">
+          <button class="pad-btn" id="d-nw">↖</button><button class="pad-btn" id="d-n">↑</button><button class="pad-btn" id="d-ne">↗</button>
+          <button class="pad-btn" id="d-w">←</button><span></span><button class="pad-btn" id="d-e">→</button>
+          <button class="pad-btn" id="d-sw">↙</button><button class="pad-btn" id="d-s">↓</button><button class="pad-btn" id="d-se">↘</button>
+        </div>
+        <div class="pad-label">当前朝向：<span class="cur-dir" id="cur-dir">右</span>（技能释放方向按此计算）</div>
+        <div class="pad-label">角色选中</div>
+        <div class="chip-row" style="gap:8px;">
+          <span class="chip" id="sel-me">我方角色</span>
+          <span class="chip" id="sel-enemy">敌方角色</span>
+        </div>
+        <div class="pad-label" style="color:var(--muted);">* 也可以直接点击地图上的单位选中</div>
+      </div>
+    </section>
+
+    <!-- 中央：地图 -->
+    <section class="map-block">
+      <canvas id="board"></canvas>
+      <div id="toast"></div>
+    </section>
+
+    <!-- 右半边：技能区块 -->
+    <section class="right-col">
+      <div class="panel" style="flex:1;">
+        <h3>⚡ 技能区块</h3>
+        <div class="skill-list" id="skill-list"></div>
+        <p class="muted" style="margin-top:10px;font-size:.8rem;">注：技能范围设定尚未编写，点击技能仅为演示（会记录朝向）。</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="data/maps.js"></script>
+  <script src="data/characters.js"></script>
+  <script src="data/specials.js"></script>
+  <script src="data/assists.js"></script>
+  <script src="battle.js"></script>
+</body>
+</html>
