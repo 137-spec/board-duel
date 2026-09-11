@@ -3,7 +3,7 @@
   var PREFIX = '《咒术回战》系列角色：';
   var MAP_OPTIONS = ['32x32', '50x50', '64x64']; // 目前提供三张地图（100x100 也可加入）
 
-  var sel = { map: null, player: null, enemy: null, special: null, assists: [] };
+  var sel = { map: null, player: null, enemy: null, special: null, assists: [], difficulty: 'simple' };
 
   function displayName(key) {
     return key.indexOf(PREFIX) === 0 ? key.slice(PREFIX.length) : key;
@@ -81,11 +81,41 @@
   var specialChips = document.getElementById('special-chips');
   var assistChips = document.getElementById('assist-chips');
   var enemyChips = document.getElementById('enemy-chips');
+  var diffChips = document.getElementById('diff-chips');
   var summary = document.getElementById('loadout-summary');
   var btnStart = document.getElementById('btn-start');
   var btnBackChar = document.getElementById('btn-back-char');
 
+  var DIFFS = [
+    { key: 'simple', label: '🙂 简单', desc: '只会追击并普攻（原版AI）' },
+    { key: 'normal', label: '😐 普通', desc: '会使用解/捌等技能与格挡' },
+    { key: 'hard', label: '😠 困难', desc: '会拉开距离、对齐光束、开领域' },
+    { key: 'brutal', label: '💀 强化', desc: '全技能+必中领域+咒词解压制（最强）' }
+  ];
+
+  function renderDifficultyChips() {
+    diffChips.innerHTML = '';
+    DIFFS.forEach(function (d) {
+      var chip = document.createElement('span');
+      chip.className = 'chip' + (sel.difficulty === d.key ? ' selected' : '');
+      chip.textContent = d.label;
+      chip.title = d.desc;
+      chip.addEventListener('click', function () {
+        sel.difficulty = d.key;
+        renderLoadoutStep();
+      });
+      diffChips.appendChild(chip);
+    });
+    var tip = document.createElement('span');
+    tip.className = 'muted';
+    tip.style.fontSize = '.86rem';
+    var cur = DIFFS.filter(function (d) { return d.key === sel.difficulty; })[0];
+    tip.textContent = cur ? '　' + cur.desc : '';
+    diffChips.appendChild(tip);
+  }
+
   function renderLoadoutStep() {
+    renderDifficultyChips();
     // 敌方角色（选 1 个 或 随机）
     enemyChips.innerHTML = '';
     var randChip = document.createElement('span');
@@ -148,11 +178,12 @@
     var enemy = sel.enemy || ready[Math.floor(Math.random() * ready.length)];
     var sp = sel.special ? SPECIALS[sel.special].name : '未选';
     var as = sel.assists.length ? sel.assists.map(function (k) { return ASSISTS[k].name; }).join('、') : '未选';
+    var diffName = (DIFFS.filter(function (d) { return d.key === sel.difficulty; })[0] || DIFFS[0]).label;
     summary.innerHTML =
       '<h3>出战配置</h3>' +
       '<p>地图：<b>' + sel.map + '</b> ｜ 我方：<b>' + CHARACTERS[sel.player].name + '</b> ｜ 特技：<b>' + sp + '</b> ｜ 援助：<b>' + as + '</b></p>' +
-      '<p>敌方角色：<b>' + CHARACTERS[enemy].name + '</b>' + (sel.enemy ? '' : '（随机分配）') + '</p>' +
-      '<p class="muted">注：技能命中可获奥义点；敌方有 AI 会在每回合结束后行动进攻。</p>';
+      '<p>敌方角色：<b>' + CHARACTERS[enemy].name + '</b>' + (sel.enemy ? '' : '（随机分配）') + ' ｜ AI 难度：<b>' + diffName + '</b></p>' +
+      '<p class="muted">注：技能命中可获奥义点；敌方 AI 会在你结束回合后行动。</p>';
   }
 
   var enemyLocked = null;
@@ -165,7 +196,8 @@
       player: sel.player,
       enemy: enemy,
       special: sel.special,
-      assists: sel.assists
+      assists: sel.assists,
+      difficulty: sel.difficulty || 'simple'
     };
     try {
       sessionStorage.setItem('boardBattle', JSON.stringify(payload));

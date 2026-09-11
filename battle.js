@@ -40,8 +40,19 @@
   }
   // 宿傩被动·诅咒之王：技能点上限+3，每轮多回复一点
   function isSukunaKey(key) { return /宿傩/.test(displayName(key)); }
-  function spCapOf() { return isSukunaKey(cfg.player) ? 6 : 3; }
-  function spRegenOf() { return isSukunaKey(cfg.player) ? 2 : 1; }
+  function spCapForKey(key) { return isSukunaKey(key) ? 6 : 3; }
+  function spRegenForKey(key) { return isSukunaKey(key) ? 2 : 1; }
+  function spCapOf() { return spCapForKey(cfg.player); }
+  function spRegenOf() { return spRegenForKey(cfg.player); }
+
+  /* ---------- AI 难度（简单=原版，其余逐级增强） ---------- */
+  var AI_LEVELS = {
+    simple: { name: '简单', useSkills: false, blockAt: 0, kiting: 0, domainRound: 0, sureHit: false, alignBeam: false },
+    normal: { name: '普通', useSkills: true, blockAt: 0.40, kiting: 0, domainRound: 0, sureHit: false, alignBeam: false },
+    hard: { name: '困难', useSkills: true, blockAt: 0.55, kiting: 2, domainRound: 3, sureHit: false, alignBeam: true },
+    brutal: { name: '强化', useSkills: true, blockAt: 0.70, kiting: 2, domainRound: 2, sureHit: true, alignBeam: true }
+  };
+  var AI = AI_LEVELS[cfg.difficulty] || AI_LEVELS.simple;
   // 代表字
   var REP_CHARS = { '五条悟': '五', '伏黑惠': '惠', '虎杖悠人': '悠', '宿傩': '傩', '乙骨优太': '乙', '伏黑甚尔': '甚' };
   function repChar(key) {
@@ -201,6 +212,8 @@
     turn: 'player',
     gameOver: false,
     enemyAttractNoted: false,
+    enemySp: 1,                     // 敌方技能点（AI 用技能）
+    enemyBlockedRound: false,       // 敌方本轮是否已格挡
     maha: null,                     // 场上魔虚罗（援助召唤）
     aiming: null,                   // {name, cells:[{x,y}]}
     cang: null,                     // 场上“苍” {x,y}
@@ -1112,6 +1125,8 @@
   function enemyAttackTarget() {
     if (state.maha && enemyInMahaRange()) return 'maha';
     if (state.shiki && enemyInShikiRange()) return 'shiki';
+    // 强化模式：领域内必中 → 无视距离直接攻击玩家
+    if (AI.sureHit && state.enemyDomain) return 'player';
     if (enemyInPlayerRange()) return 'player';
     return null;
   }
@@ -1210,20 +1225,128 @@
     }
     return moved;
   }
+  /* 敌方玩家攻击结算（随 AI 难度增强：格挡 / 解 / 咒词解 / 捌 / 领域必中） */
+  function enemyAttackPlayer() {
+    var e = state.enemy;
+    var eMax = CHARACTERS[cfg.enemy].hp || 1;
+    var hpRatio = e.hp / eMax;
+    var aligned = (e.x === state.player.x || e.y === state.player.y);
+    var dist = Math.abs(e.x - state.player.x) + Math.abs(e.y - state.player.y);
+    var sureHit = AI.sureHit && state.enemyDomain; // 强化：领域内必中
+
+    // 「开」蓄力被打断
+    if (state.openWindup) {
+      state.sp = Math.min(spCapOf(), state.sp + 4);
+      state.openWindup = null;
+      toast('💢 「开」蓄力被 ' + nameShort(cfg.enemy) + ' 打断！技能取消（返还 4 技能点）');
+      return;
+    }
+
+    // 1) 低血量格挡
+    if (AI.blockAt && hpRatio < AI.blockAt && !state.enemyBlockedRound) {
+      state.enemyBlockedRound = true;
+      e.shield = (e.shield || 0) + 25;
+      toast('🛡 ' + nameShort(cfg.enemy) + ' 使用「格挡」：获得 25 点护盾（血量 ' + e.hp + '/' + eMax + '）');
+      return;
+    }
+
+    // 2) 技能（宿傩系）：解 / 咒词吟唱解 / 捌
+    if (AI.useSkills && isSukunaKey(cfg.enemy)) {
+      // 咒词吟唱「解」：无视无限与护盾（对高威胁 / 有护盾 / 有无限时使用）
+      if (state.enemySp >= 2 && aligned && dist <= 8 &&
+        (sureHit || state.infinity > 0 || (state.player.shield || 0) > 0 || state.player.hp <= 350)) {
+        state.enemySp -= 2;
+        var dC = applyDamageBypass(state.player, 300);
+        toast('⚔️ ' + nameShort(cfg.enemy) + ' 使用「解（咒词吟唱）」：无视护盾与无限，造成 ' + dC + ' 点伤害');
+        return;
+      }
+      // 捌：贴身时打最大血量百分比伤害
+      if (state.enemySp >= 1 && Math.abs(e.x - state.player.x) <= 1 && Math.abs(e.y - state.player.y) <= 1) {
+        state.enemySp -= 1;
+        var d8 = Math.round((CHARACTERS[cfg.player].hp || 1) * 0.10) + 200;
+        if (sureHit || state.infinity <= 0) {
+          var d8r = applyDamage(state.player, d8);
+          toast('⚔️ ' + nameShort(cfg.enemy) + ' 使用「捌」：造成 ' + d8r + ' 点伤害（最大血量10%+200）');
+        } else {
+          toast('🛡「无限」使 ' + nameShort(cfg.enemy) + ' 的「捌」无法命中！');
+        }
+        return;
+      }
+      // 解：同轴光束（困难/强化会主动对齐）
+      if (state.enemySp >= 1 && (aligned || sureHit) && (dist <= 8 || sureHit)) {
+        state.enemySp -= 1;
+        if (sureHit || state.infinity <= 0) {
+          var dJ = applyDamage(state.player, 200);
+          toast('⚔️ ' + nameShort(cfg.enemy) + ' 使用「解」：造成 ' + dJ + ' 点伤害');
+        } else {
+          toast('🛡「无限」使 ' + nameShort(cfg.enemy) + ' 的「解」无法命中！');
+        }
+        return;
+      }
+    }
+
+    // 3) 普攻（保底）
+    if (sureHit || state.infinity <= 0) {
+      var baseDmg = 25;
+      // 双面四臂：普攻伤害 +25（宿傩被动之一，若数据里有该被动则生效）
+      var passives = (CHARACTERS[cfg.enemy].passives || []).join('');
+      if (/双面四臂/.test(passives)) baseDmg += 25;
+      if (state.domExtend) {
+        var reduced = Math.round(baseDmg * 0.7);
+        applyDamage(state.player, reduced);
+        toast('🔰 领域展延减伤30%：' + nameShort(cfg.enemy) + ' 对你造成 ' + reduced + ' 点伤害');
+      } else {
+        var dmg = applyDamage(state.player, baseDmg);
+        toast('⚔️ ' + nameShort(cfg.enemy) + ' 对你普攻：造成 ' + dmg + ' 点伤害');
+      }
+    } else {
+      toast('🛡「无限」使 ' + nameShort(cfg.enemy) + ' 的攻击无法命中！');
+    }
+  }
+
+  /* 敌方走位（按难度）：
+     简单/普通：直冲玩家
+     困难/强化：保持距离（风筝）并使用「解」光束时先对齐同行/同列 */
+  function enemySmartStep() {
+    var e = state.enemy, p = state.player;
+    var cheb = Math.max(Math.abs(e.x - p.x), Math.abs(e.y - p.y));
+    var aligned = (e.x === p.x || e.y === p.y);
+    var tries = [];
+    if (AI.kiting && cheb <= 1) {
+      // 拉开距离：背离玩家
+      if (p.x !== e.x) tries.push([e.x > p.x ? 1 : -1, 0]);
+      if (p.y !== e.y) tries.push([0, e.y > p.y ? 1 : -1]);
+    } else if (AI.alignBeam && !aligned) {
+      // 对齐光束：优先走能对齐的轴，并保持 2 格以上
+      if (e.y !== p.y) tries.push([0, e.y > p.y ? -1 : 1]);
+      if (e.x !== p.x) tries.push([e.x > p.x ? -1 : 1, 0]);
+    }
+    // 默认接近
+    if (p.x !== e.x) tries.push([e.x > p.x ? 1 : -1, 0]);
+    if (p.y !== e.y) tries.push([0, e.y > p.y ? 1 : -1]);
+    for (var i = 0; i < tries.length; i++) {
+      var nx = e.x + tries[i][0], ny = e.y + tries[i][1];
+      var blockedByInfinity = state.infinity > 0 &&
+        Math.abs(nx - state.player.x) <= 1 && Math.abs(ny - state.player.y) <= 1;
+      if (inBounds(nx, ny) && mapData[ny][nx] === 0 && !blockedByInfinity) { e.x = nx; e.y = ny; return true; }
+    }
+    return false;
+  }
+
   function enemyTurn() {
     if (state.gameOver) return;
     state.turn = 'enemy';
     draw();
     renderStatus();
-    toast('⏳ ' + nameShort(cfg.enemy) + ' 开始行动…');
+    toast('⏳ ' + nameShort(cfg.enemy) + ' 开始行动…（难度：' + AI.name + '）');
     state.playerSlow = 0; // 敌方领域减速在玩家回合生效后重置
     mahaAct(); // 玩家召唤的魔虚罗先行（AI操控）
     shikiAct(); // 式神也先行
     if (state.gameOver) return;
-    // 敌方宿傩：第3轮自动展开领域（AI 演示）
-    if (isSukunaKey(cfg.enemy) && !state.enemyDomain && state.round >= 3) {
+    // 敌方宿傩：按难度在第 N 轮展开领域
+    if (isSukunaKey(cfg.enemy) && !state.enemyDomain && AI.domainRound && state.round >= AI.domainRound) {
       state.enemyDomain = { rounds: 5 };
-      toast('🌐 ' + nameShort(cfg.enemy) + ' 展开领域「伏魔御厨子」！（敌方每轮结束两次解的伤害·粉尘+20%）');
+      toast('🌐 ' + nameShort(cfg.enemy) + ' 展开领域「伏魔御厨子」！' + (AI.sureHit ? '（领域内攻击必中）' : ''));
       draw(); renderStatus();
     }
     var cap = Math.max(0, moveCapOf(cfg.enemy) - state.enemySlow - (state.domain ? 5 : 0));
@@ -1238,26 +1361,7 @@
         } else if (target === 'shiki') {
           enemyAttacksShiki();
         } else {
-          if (state.openWindup) {
-            // 「开」蓄力被打断：取消并返还技能点
-            state.sp = Math.min(spCapOf(), state.sp + 4);
-            state.openWindup = null;
-            toast('💢 「开」蓄力被 ' + nameShort(cfg.enemy) + ' 打断！技能取消（返还 4 技能点）');
-          } else if (state.infinity > 0) {
-            // 「无限」：敌方攻击无法命中
-            toast('🛡「无限」使 ' + nameShort(cfg.enemy) + ' 的攻击无法命中！');
-          } else {
-            var baseDmg = 25;
-            if (state.domExtend) {
-              // 领域展延：受到伤害减少30%（四舍五入）
-              var reduced = Math.round(baseDmg * 0.7);
-              applyDamage(state.player, reduced);
-              toast('🔰 领域展延减伤30%：' + nameShort(cfg.enemy) + ' 对你造成 ' + reduced + ' 点伤害');
-            } else {
-              var dmg = applyDamage(state.player, baseDmg);
-              toast('⚔️ ' + nameShort(cfg.enemy) + ' 对你普攻：造成 ' + dmg + ' 点伤害' + (state.player.hp <= 0 ? '' : '（护盾吸收剩余值已结算）'));
-            }
-          }
+          enemyAttackPlayer();
         }
         renderStatus();
         checkEnd();
@@ -1274,7 +1378,7 @@
           state.enemyAttractNoted = true;
           toast('🌀 敌方陷入「苍」吸附范围：每移动一格额外消耗 1 格移动力');
         }
-        var moved = enemyStep();
+        var moved = enemySmartStep();
         steps += (inAttract ? 2 : 1);
         draw();
         if (!moved) { // 走不动了 → 结束
@@ -1377,6 +1481,9 @@
     state.usedSkill = false;
     state.enemyAttractNoted = false;
     state.enemySlow = 0; // 敌方减速每轮重置（蛛网解/领域）
+    // 敌方技能点回复（诅咒之王：上限6、每轮+2）
+    state.enemySp = Math.min(spCapForKey(cfg.enemy), state.enemySp + spRegenForKey(cfg.enemy));
+    state.enemyBlockedRound = false;
     if (state.infinity > 0) {
       state.infinity--;
       if (state.infinity <= 0) toast('⌛「无限」状态消失');
@@ -1486,10 +1593,12 @@
   window.addEventListener('resize', resize);
 
   /* ---------- 初始化 ---------- */
+  var diffTag = document.getElementById('diff-tag');
+  if (diffTag) diffTag.textContent = '难度 ' + AI.name;
   listClick(document.getElementById('skill-list'));
   renderSkills();
   renderDir();
   renderStatus();
   resize();
-  toast('第 1 轮开始！移动 · 点击技能选目标 · 结束回合后敌方会行动');
+  toast('第 1 轮开始！（AI 难度：' + AI.name + '）移动 · 点击技能选目标 · 结束回合后敌方会行动');
 })();

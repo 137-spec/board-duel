@@ -35,6 +35,17 @@ body {
   text-align: center;
 }
 
+/* 顶部声明（一行小字） */
+.site-disclaimer {
+  font-size: .72rem;
+  line-height: 1.5;
+  color: #9c8fc0;
+  letter-spacing: .02em;
+  text-align: center;
+  margin-bottom: 2px;
+  opacity: .9;
+}
+
 .game-title {
   font-size: clamp(2.2rem, 7.2vw, 3.9rem);
   font-weight: 900;
