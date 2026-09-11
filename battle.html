@@ -6,10 +6,10 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>对决中 - 同人棋盘对决</title>
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
   <link rel="stylesheet" href="battle.css">
-  <link rel="stylesheet" href="mobile.css?v=8">
-  <script src="mode.js?v=8"></script>
+  <link rel="stylesheet" href="mobile.css?v=9">
+  <script src="mode.js?v=9"></script>
 </head>
 <body class="battle-page">
   <button class="menu-btn small" id="nl-open" style="position:fixed;right:10px;bottom:52px;z-index:999;">🌐 联机大厅</button>
@@ -84,16 +84,9 @@
     </section>
   </main>
 
-  <script src="data/gamedata.js?v=8"></script>
-  <script src="data/maps.js?v=8"></script>
-  <script src="data/skills.js?v=8"></script>
-  <script src="data/ranges.js?v=8"></script>
-  <script src="net.js?v=8"></script>
-  <script src="battle.js?v=8"></script>
-
   <div class="modal-mask hidden" id="net-lobby" style="z-index:200;">
     <div class="modal" style="width:min(560px,94vw);text-align:left;">
-      <h2 style="text-align:center;">🌐 互联网联机</h2>
+      <h2 style="text-align:center;">🌐 联机大厅</h2>
       <p class="muted" style="text-align:center;font-size:.86rem;">无需服务器：交换两段连接码即可直连（回合制实时同步）</p>
       <div style="display:flex;gap:10px;justify-content:center;margin:12px 0;">
         <button class="menu-btn small" id="nl-host">🏠 创建房间（我是房主）</button>
@@ -106,6 +99,13 @@
       </div>
     </div>
   </div>
+
+  <script src="data/gamedata.js?v=9"></script>
+  <script src="data/maps.js?v=9"></script>
+  <script src="data/skills.js?v=9"></script>
+  <script src="data/ranges.js?v=9"></script>
+  <script src="net.js?v=9"></script>
+  <script src="battle.js?v=9"></script>
 
   <div class="modal-mask hidden" id="game-over">
     <div class="modal">

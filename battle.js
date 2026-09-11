@@ -2525,12 +2525,31 @@ window.__bootBattle = function (cfgIn) {
    启动：联机模式先走大厅握手，其它模式直接开局
    ============================================================ */
 (function () {
+  function ready(fn) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
+    else fn();
+  }
+  ready(function () {
   var role = null;
   try { role = sessionStorage.getItem('onlineRole'); } catch (e) {}
   var lobby = document.getElementById('net-lobby');
   var openBtn = document.getElementById('nl-open');
-  if (openBtn) openBtn.addEventListener('click', function () { if (lobby) lobby.classList.remove('hidden'); });
   var NETC = window.DSH_NET;
+  if (openBtn) {
+    openBtn.addEventListener('click', function () {
+      if (!lobby) return;
+      lobby.classList.remove('hidden');
+      if (!role) {
+        // 非联机入口进入：只做引导说明
+        var hb = document.getElementById('nl-host');
+        var gb = document.getElementById('nl-guest');
+        if (hb) hb.style.display = 'none';
+        if (gb) gb.style.display = 'none';
+        var bd = document.getElementById('nl-body');
+        if (bd) bd.innerHTML = '<p>要联机对局，请按以下方式进入：</p><p style="margin-top:6px;">主菜单 → <b>开始游戏</b> → 第 1 步选择 <b>📶 局域网联机</b> 或 <b>🌐 互联网联机</b> → 选好地图与角色 → 点「锁定并开始对决」</p><p style="margin-top:6px;">进入大厅后，一人点「🏠 创建房间」把邀请码发给对方，对方点「🚪 加入房间」粘贴并回传应答码即可。</p>';
+      }
+    });
+  }
   if (!role || !NETC || !lobby) {
     window.__bootBattle(null);
     return;
@@ -2637,4 +2656,5 @@ window.__bootBattle = function (cfgIn) {
       window.__bootBattle(data.cfg);
     }
   };
+  });
 })();

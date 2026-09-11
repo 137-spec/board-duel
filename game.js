@@ -27,8 +27,8 @@
   /* ---------- 第 0 步：模式 ---------- */
   var MODES = [
     { key: 'duel', icon: '⚔️', label: '单人对决', sub: '你 vs AI（四档难度）', desc: '与电脑对战，可选 AI 难度' },
-    { key: 'lan', icon: '📶', label: '局域网联机', sub: '同一 WiFi 双人对战', desc: '两名玩家各操控一方，同一 WiFi 下最稳；选人流程与单人对决相同' },
-    { key: 'online', icon: '🌐', label: '互联网联机', sub: '异地好友点对点直连', desc: '交换连接码即可跨网络对战（无需服务器）' }
+    { key: 'lan', icon: '📶', label: '局域网联机', sub: '进入后创建/加入房间（同一WiFi）', desc: '两名玩家各操控一方，同一 WiFi 下最稳；选人流程与单人对决相同' },
+    { key: 'online', icon: '🌐', label: '互联网联机', sub: '进入后创建/加入房间（异地）', desc: '交换连接码即可跨网络对战（无需服务器）' }
   ];
   var modeGrid = document.getElementById('mode-grid');
   MODES.forEach(function (m) {
