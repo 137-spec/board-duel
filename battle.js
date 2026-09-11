@@ -802,14 +802,16 @@
       var dinfo = getDash(eff.rangeKey);
       if (!dinfo) { toast('没有「' + name + '」的冲刺范围数据'); return; }
       var dD = DIRS[state.dirIndex];
+      // 前冲解：向轮盘方向冲 3 格；后撤解：向轮盘反方向后撤 3 格
+      var dashVec = eff.out ? { dx: -dD.dx, dy: -dD.dy } : { dx: dD.dx, dy: dD.dy };
       var px = state.player.x, py = state.player.y;
       for (var i2 = 0; i2 < eff.dash; i2++) {
-        var nx2 = px + dD.dx, ny2 = py + dD.dy;
+        var nx2 = px + dashVec.dx, ny2 = py + dashVec.dy;
         if (!inBounds(nx2, ny2) || mapData[ny2][nx2] !== 0) break;
         px = nx2; py = ny2;
       }
       state.player.x = px; state.player.y = py;
-      var rot = (state.dirIndex + (eff.out ? 2 : 0)) % 4;
+      var rot = state.dirIndex; // 攻击方向 = 轮盘方向（后撤解即后撤的反方向）
       var cells2 = [];
       dinfo.attack.forEach(function (o) {
         var dx = o[0], dy = o[1];
@@ -819,12 +821,13 @@
       });
       if (eff.dilate) cells2 = dilateCells(cells2, eff.dilate);
       var hit2 = state.sureHit || cells2.some(function (c) { return c.x === state.enemy.x && c.y === state.enemy.y; });
+      var moveWord = eff.out ? '后撤' : '冲刺';
       if (hit2) {
         var d4 = applyDamage(state.enemy, eff.dmg);
         earnOp();
-        toast('💫「' + name + '」冲刺到 (' + px + ',' + py + ')！' + nameShort(cfg.enemy) + ' 受到 ' + d4 + ' 点伤害');
+        toast('💫「' + name + '」' + moveWord + '到 (' + px + ',' + py + ')，朝' + dD.label + '打出「解」！' + nameShort(cfg.enemy) + ' 受到 ' + d4 + ' 点伤害');
       } else {
-        toast('💫「' + name + '」冲刺到 (' + px + ',' + py + ')，敌人不在打击区');
+        toast('💫「' + name + '」' + moveWord + '到 (' + px + ',' + py + ')，朝' + dD.label + '打出的「解」未命中');
       }
       checkEnd();
     } else if (eff.type === 'domain') {
