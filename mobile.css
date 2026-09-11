@@ -103,6 +103,8 @@ html.phone-mode .skill-btn .cd { font-size: .6rem; }
 html.phone-mode .skill-group-title { font-size: .62rem; margin: 6px 0 3px; }
 html.phone-mode #battle-top { padding: 5px 8px; gap: 6px; }
 html.phone-mode #battle-top .menu-btn.small { font-size: .64rem; padding: 4px 7px; }
+/* 手机模式：缩放按钮保持易点 */
+html.phone-mode .zoom-btn { font-size: .78rem !important; padding: 5px 9px !important; }
 html.phone-mode #battle-top .round-info { font-size: .8rem; }
 html.phone-mode #enemy-strip { font-size: .66rem; padding: 4px 9px; gap: 6px; top: 5px; }
 html.phone-mode .hp-bar-wrap.mini { width: 78px; height: 8px; }

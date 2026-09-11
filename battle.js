@@ -372,7 +372,9 @@
   /* ---------- 画布渲染（白底黑线 + 拖动平移） ---------- */
   var canvas = document.getElementById('board');
   var ctx = canvas.getContext('2d');
-  var CELL = 26;
+  var BASE_CELL = 26;         // 1× 缩放时每格像素
+  var zoom = 1;               // 当前缩放倍率（0.5–3）
+  var CELL = BASE_CELL;       // 实际每格像素 = BASE_CELL × zoom
   var camX = 0, camY = 0;
   var mapPxW = W * CELL, mapPxH = H * CELL;
   // 小地图
@@ -434,6 +436,28 @@
     camX = (state.player.x + 0.5) * CELL - canvas.width / 2;
     camY = (state.player.y + 0.5) * CELL - canvas.height / 2;
     clampCam();
+  }
+  /* ---------- 地图缩放（手机模式/滚轮/双指均可） ---------- */
+  function zoomLabel() {
+    var el = document.getElementById('zoom-tag');
+    if (el) el.textContent = '🔍 ' + Math.round(zoom * 100) + '%';
+  }
+  function zoomAt(factor, clientX, clientY) {
+    var rect = canvas.getBoundingClientRect();
+    var ax = (typeof clientX === 'number') ? (clientX - rect.left) : canvas.width / 2;
+    var ay = (typeof clientY === 'number') ? (clientY - rect.top) : canvas.height / 2;
+    var worldX = (camX + ax) / CELL, worldY = (camY + ay) / CELL;
+    var next = Math.max(0.5, Math.min(3, zoom * factor));
+    if (Math.abs(next - zoom) < 0.001) return;
+    zoom = next;
+    CELL = Math.max(8, Math.round(BASE_CELL * zoom));
+    mapPxW = W * CELL;
+    mapPxH = H * CELL;
+    camX = worldX * CELL - ax;
+    camY = worldY * CELL - ay;
+    clampCam();
+    draw();
+    zoomLabel();
   }
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -731,12 +755,36 @@
     if (!inBounds(nx, ny)) { toast('⚠ 到达地图边界'); return; }
     if (mapData[ny][nx] !== 0) { toast('⚠ 该格有障碍物'); return; }
     // 允许与敌方同格、与苍重叠（战棋可堆叠规则）
-    if (state.movedThisRound >= Math.max(0, state.moveCap - (state.playerSlow || 0)) || state.ap <= 0) { toast('⚠ 本轮步数已用完'); return; }    u.x = nx; u.y = ny;
+    var effCap = Math.max(0, state.moveCap - (state.playerSlow || 0));
+    if (state.movedThisRound >= effCap || state.ap <= 0) { toast('⚠ 本轮步数已用完'); return; }
+    // 敌方「苍」的吸附范围：靠近被牵引（免费多走一格），远离更费力（多消耗一格）
+    var ec = state.enemyCang;
+    var inEnemyAttract = ec && cangArea && cangArea.attract.some(function (o) {
+      return u.x === ec.x + o[0] && u.y === ec.y + o[1];
+    });
+    var distBefore = ec ? (Math.abs(u.x - ec.x) + Math.abs(u.y - ec.y)) : 0;
+    u.x = nx; u.y = ny;
     state.movedThisRound++;
+    var note = '';
+    if (inEnemyAttract && ec) {
+      var distAfter = Math.abs(nx - ec.x) + Math.abs(ny - ec.y);
+      if (distAfter < distBefore) {
+        var fx = nx + dx, fy = ny + dy;
+        if (inBounds(fx, fy) && mapData[fy][fx] === 0) {
+          u.x = fx; u.y = fy;
+          note = '（被「苍」牵引：额外前进一格）';
+        } else {
+          note = '（被「苍」牵引，但前方受阻）';
+        }
+      } else if (distAfter > distBefore) {
+        state.movedThisRound += 1; // 远离：多消耗一格
+        note = '（远离「苍」：额外消耗 1 格移动力）';
+      }
+    }
     if (state.movedThisRound >= state.moveCap) state.ap = 0;
     draw();
     renderStatus();
-    toast('我方移动到 (' + nx + ',' + ny + ') 剩余 ' + Math.max(0, state.moveCap - state.movedThisRound) + ' 步');
+    toast('我方移动到 (' + u.x + ',' + u.y + ') 剩余 ' + Math.max(0, effCap - state.movedThisRound) + ' 步' + note);
   }
 
   /* ---------- 技能 ---------- */
@@ -1771,16 +1819,38 @@
         return;
       }
       if (steps < cap) {
-        // 「苍」吸附范围：敌方每移动一格额外消耗1格移动力
+        // 「苍」吸附范围（新规则）：靠近苍时每次移动额外向该方向多走一格；远离苍时每格多消耗一格
         var inAttract = state.cang && cangArea && cangArea.attract.some(function (o) {
           return state.enemy.x === state.cang.x + o[0] && state.enemy.y === state.cang.y + o[1];
         });
         if (inAttract && !state.enemyAttractNoted) {
           state.enemyAttractNoted = true;
-          toast('🌀 敌方陷入「苍」吸附范围：每移动一格额外消耗 1 格移动力');
+          toast('🌀 敌方陷入「苍」吸附范围：靠近被牵引，远离更费力');
         }
+        var distBefore = state.cang ? (Math.abs(state.enemy.x - state.cang.x) + Math.abs(state.enemy.y - state.cang.y)) : 0;
         var moved = enemySmartStep();
-        steps += (inAttract ? 2 : 1);
+        var distAfter = state.cang ? (Math.abs(state.enemy.x - state.cang.x) + Math.abs(state.enemy.y - state.cang.y)) : 0;
+        if (inAttract && state.cang) {
+          if (distAfter < distBefore) {
+            // 靠近：被牵引，额外免费向苍移动一格（不能斜走）
+            var gx = state.cang.x - state.enemy.x, gy = state.cang.y - state.enemy.y;
+            var sx = gx > 0 ? 1 : (gx < 0 ? -1 : 0), sy = gy > 0 ? 1 : (gy < 0 ? -1 : 0);
+            var triesFree = [];
+            if (sx !== 0) triesFree.push([sx, 0]);
+            if (sy !== 0) triesFree.push([0, sy]);
+            for (var fi = 0; fi < triesFree.length; fi++) {
+              var fx = state.enemy.x + triesFree[fi][0], fy = state.enemy.y + triesFree[fi][1];
+              if (inBounds(fx, fy) && mapData[fy][fx] === 0) { state.enemy.x = fx; state.enemy.y = fy; break; }
+            }
+            steps += 1;
+          } else if (distAfter > distBefore) {
+            steps += 2; // 远离：多消耗一格
+          } else {
+            steps += 1;
+          }
+        } else {
+          steps += 1;
+        }
         draw();
         if (!moved) { // 走不动了 → 结束
           clearInterval(iv);
@@ -1995,14 +2065,45 @@
     document.querySelector('.right-col').classList.toggle('hidden-col');
   });
   window.addEventListener('resize', resize);
+  // 缩放按钮 / 滚轮 / 双指
+  document.getElementById('zoom-in').addEventListener('click', function () { zoomAt(1.25); });
+  document.getElementById('zoom-out').addEventListener('click', function () { zoomAt(1 / 1.25); });
+  document.getElementById('zoom-reset').addEventListener('click', function () {
+    zoom = 1; CELL = BASE_CELL; mapPxW = W * CELL; mapPxH = H * CELL;
+    centerCam(); draw(); zoomLabel();
+    toast('🔍 缩放已复位（100%）');
+  });
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
+  }, { passive: false });
+  // 双指缩放
+  var pinchStart = 0;
+  function touchDist(t) {
+    var dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  canvas.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 2) pinchStart = touchDist(e.touches);
+  }, { passive: true });
+  canvas.addEventListener('touchmove', function (e) {
+    if (e.touches.length === 2 && pinchStart > 0) {
+      var d = touchDist(e.touches);
+      if (d > 0) zoomAt(d / pinchStart, (e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
+      pinchStart = d;
+      e.preventDefault();
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchend', function () { pinchStart = 0; });
 
   /* ---------- 初始化 ---------- */
   var diffTag = document.getElementById('diff-tag');
   if (diffTag) diffTag.textContent = '难度 ' + AI.name;
+  zoomLabel();
   listClick(document.getElementById('skill-list'));
   renderSkills();
   renderDir();
   renderStatus();
   resize();
-  toast('第 1 轮开始！（AI 难度：' + AI.name + '）移动 · 点击技能选目标 · 结束回合后敌方会行动');
+  toast('第 1 轮开始！（AI 难度：' + AI.name + '）➕➖ 或滚轮/双指可缩放地图');
 })();

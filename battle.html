@@ -12,8 +12,11 @@
 <body class="battle-page">
   <div id="battle-top">
     <a class="menu-btn small" href="index.html">🏠 返回主菜单</a>
-    <span class="round-info" id="round-info">第 1 轮<span class="version-tag" id="version-tag">v6</span><span class="version-tag" id="diff-tag">难度 简单</span></span>
-    <div style="display:flex;gap:8px;">
+    <span class="round-info" id="round-info">第 1 轮<span class="version-tag" id="version-tag">v6</span><span class="version-tag" id="diff-tag">难度 简单</span><span class="version-tag" id="zoom-tag">🔍 100%</span></span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="menu-btn small zoom-btn" id="zoom-out">➖</button>
+      <button class="menu-btn small zoom-btn" id="zoom-in">➕</button>
+      <button class="menu-btn small zoom-btn" id="zoom-reset">⤢</button>
       <button class="menu-btn small" id="btn-toggle-left">🕹 状态/移动面板</button>
       <button class="menu-btn small" id="btn-toggle-right">⚡ 技能面板</button>
       <button class="menu-btn small" id="btn-end-round">⏭ 结束回合</button>
