@@ -1,0 +1,114 @@
+/* 显示模式：电脑模式（默认）/ 手机模式（手机比例画框 + 可横屏） */
+
+/* ---------- 右下角模式切换器 ---------- */
+#mode-switcher {
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, .88);
+  border: 1px solid rgba(255, 215, 94, .45);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: .78rem;
+  color: #f3ecff;
+  font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+}
+#mode-switcher button {
+  background: rgba(255, 255, 255, .08);
+  color: #f3ecff;
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: .78rem;
+}
+#mode-switcher button.on { border-color: #7ef07e; color: #a7e98c; }
+#mode-switcher .ms-label { color: #b8a9d9; }
+
+/* 主界面模式选择块 */
+.mode-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.mode-picker .mp-label { color: var(--muted, #b8a9d9); font-size: .86rem; }
+.mode-picker button {
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
+  border: 1px solid rgba(255,215,94,.35);
+  color: #f3ecff;
+  font-family: inherit;
+  font-size: .92rem;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.mode-picker button:hover { border-color: #ffd75e; }
+.mode-picker button.on { border-color: #7ef07e; box-shadow: 0 0 0 2px rgba(126,240,126,.35); }
+
+/* ---------- 手机模式：屏幕中央的手机比例画框 ---------- */
+html.phone-mode body {
+  width: min(100vw, calc(100vh * 9 / 19.5));
+  max-width: 100vw;
+  min-height: 100vh;
+  margin: 0 auto !important;
+  padding: 16px 12px !important;
+  border-left: 8px solid #0b0b0b;
+  border-right: 8px solid #0b0b0b;
+  border-radius: 26px;
+  box-shadow: 0 0 0 2px #2a2a2a, 0 0 60px rgba(0, 0, 0, .85);
+  overflow-x: hidden;
+}
+/* 手机横屏：宽画框（19.5:9） */
+html.phone-mode.phone-landscape body {
+  width: min(100vw, calc(100vh * 19.5 / 9));
+  height: min(100vh, calc(100vw * 9 / 19.5));
+  min-height: 0;
+  padding: 10px 14px !important;
+}
+
+/* 手机模式下的字号/间距压缩 */
+html.phone-mode .game-title { font-size: clamp(1.7rem, 9vw, 2.4rem); }
+html.phone-mode .menu-list { gap: 9px; }
+html.phone-mode .menu-btn { font-size: .95rem; padding: 10px 12px; }
+html.phone-mode .coin-display { font-size: .86rem; padding: 5px 14px; }
+html.phone-mode .card { padding: 13px 15px; }
+html.phone-mode .card p, html.phone-mode .card li { font-size: .9rem; line-height: 1.7; }
+html.phone-mode .page-title { font-size: 1.15rem; }
+html.phone-mode .jjk-banner { font-size: 1.02rem; padding: 12px 10px; }
+html.phone-mode .option-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+html.phone-mode .option-card { padding: 12px 8px; }
+
+/* 手机模式下的战斗界面压缩（竖屏更窄、横屏可用） */
+html.phone-mode .left-col { width: 132px; padding: 3px; top: 6px; bottom: 6px; left: 6px; }
+html.phone-mode .right-col { width: 142px; padding: 3px; top: 6px; bottom: 6px; right: 6px; }
+html.phone-mode .panel { padding: 8px 9px; border-radius: 10px; }
+html.phone-mode .panel h3 { font-size: .74rem; margin-bottom: 6px; }
+html.phone-mode .stat-line { font-size: .68rem; padding: 2px 0; }
+html.phone-mode .dots { font-size: .68rem; letter-spacing: 1px; }
+html.phone-mode .pad-label { font-size: .66rem; margin: 5px 0 3px; }
+html.phone-mode .pad-grid { grid-template-columns: repeat(3, 34px); grid-auto-rows: 28px; gap: 4px; }
+html.phone-mode .pad-grid .pad-btn { font-size: .78rem; border-radius: 7px; }
+html.phone-mode .chips .chip { font-size: .62rem; padding: 2px 6px; }
+html.phone-mode .skill-btn { font-size: .68rem; padding: 6px 8px; border-radius: 8px; }
+html.phone-mode .skill-btn .cd { font-size: .6rem; }
+html.phone-mode .skill-group-title { font-size: .62rem; margin: 6px 0 3px; }
+html.phone-mode #battle-top { padding: 5px 8px; gap: 6px; }
+html.phone-mode #battle-top .menu-btn.small { font-size: .64rem; padding: 4px 7px; }
+html.phone-mode #battle-top .round-info { font-size: .8rem; }
+html.phone-mode #enemy-strip { font-size: .66rem; padding: 4px 9px; gap: 6px; top: 5px; }
+html.phone-mode .hp-bar-wrap.mini { width: 78px; height: 8px; }
+html.phone-mode #minimap { right: 152px; top: 5px; transform: scale(.72); transform-origin: top right; }
+html.phone-mode #toast { font-size: .72rem; padding: 6px 12px; bottom: 8px; }
+html.phone-mode #mode-switcher { font-size: .7rem; padding: 4px 8px; }
+html.phone-mode #mode-switcher button { font-size: .7rem; padding: 2px 8px; }
+html.phone-mode .modal { padding: 18px 20px; }
+html.phone-mode .modal h2 { font-size: 1.05rem; }
