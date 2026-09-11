@@ -154,13 +154,22 @@
 
   var rangeCache = {};
   function getRange(key) {
-    // 严格精确匹配（文件名带“ - 副本”等前缀后缀的未写好的范围图不当作正式范围）
+    // 优先使用代码定稿范围（data/ranges.js），不依赖本地 txt；没有则回退到转换出的范围图
     if (!(key in rangeCache)) {
-      rangeCache[key] = SKILL_RANGES[key] ? parseRangeGrid(SKILL_RANGES[key]) : null;
+      var rc = (typeof RANGE_CODE !== 'undefined') ? RANGE_CODE[key] : null;
+      if (rc && rc.cells) {
+        rangeCache[key] = { cells: rc.cells, own: [0, 0] };
+      } else {
+        rangeCache[key] = SKILL_RANGES[key] ? parseRangeGrid(SKILL_RANGES[key]) : null;
+      }
     }
     return rangeCache[key];
   }
-  var cangArea = parseCangArea(CANG_AREA_KEY);
+  var cangArea = (function () {
+    var rc = (typeof RANGE_CODE !== 'undefined') ? RANGE_CODE[CANG_AREA_KEY] : null;
+    if (rc && rc.attack && rc.attract) return { attack: rc.attack, attract: rc.attract };
+    return parseCangArea(CANG_AREA_KEY);
+  })();
 
   /* ---------- 对局状态 ---------- */
   var mapData = GAME_MAPS[cfg.map] || GAME_MAPS['50x50'];
