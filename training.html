@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>训练营 - 同人棋盘对决</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="pages.css">
+  <link rel="stylesheet" href="mobile.css">
+  <script src="mode.js"></script>
+</head>
+<body class="content-page">
+  <div class="wrap">
+    <header class="page-header">
+      <a class="menu-btn small" href="index.html">← 返回主菜单</a>
+      <span class="page-title">训练营</span>
+    </header>
+
+    <div class="jjk-note">训练营：固定 <b>50×50</b> 地图 ｜ 可选择敌方角色 ｜ <b>双方角色都能操控</b> ｜ AI 可随时开关。适合练习连招与技能范围。</div>
+
+    <section class="step-box">
+      <h2 style="color:var(--gold);">我方角色</h2>
+      <div class="option-grid" id="my-grid"></div>
+      <div class="detail-box" id="my-detail">点击角色卡片查看详情</div>
+    </section>
+
+    <section class="step-box">
+      <h2 style="color:var(--gold);">敌方角色（训练对象）</h2>
+      <div class="option-grid" id="foe-grid"></div>
+      <div class="detail-box" id="foe-detail">点击角色卡片查看详情</div>
+    </section>
+
+    <section class="step-box">
+      <h2 style="color:var(--gold);">AI 设置</h2>
+      <div class="chip-row" id="ai-chips"></div>
+      <p class="muted" style="margin-top:8px;">关掉 AI 后：结束回合只是推进轮次，敌方角色由你手动操控（可移动、可用技能）。战斗中顶部还有「🤖 AI 开关」可随时切换。</p>
+    </section>
+
+    <section class="step-box">
+      <div class="start-row">
+        <span class="summary" id="summary">请选择我方与敌方角色</span>
+        <button class="menu-btn" id="btn-start">🏋️ 进入训练营</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="data/gamedata.js"></script>
+  <script src="data/maps.js"></script>
+  <script src="training.js"></script>
+</body>
+</html>

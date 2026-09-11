@@ -55,6 +55,8 @@
     brutal: { name: '强化', useSkills: true, blockAt: 0, kiting: 2, useDomain: true, minDomainRound: 2, sureHit: true, alignBeam: true, summon: true, place: true, summonCare: 0.7 }
   };
   var AI = AI_LEVELS[cfg.difficulty] || AI_LEVELS.simple;
+  // 训练营模式：固定 50×50、双方均可操控、AI 可随时开关
+  var TRAINING = cfg.mode === 'training';
 
   /* 领域展开时机判定：要打得中、打得值，不是到点就开
      条件：玩家在领域范围内（切比雪夫≤6） + 玩家血量还有价值（≥25%）
@@ -212,6 +214,8 @@
     op: 2,                          // 奥义点（开局2，命中+1，上限6）
     movedThisRound: 0,
     moveCap: moveCapOf(cfg.player),
+    enemyMoved: 0,                  // 敌方本轮已移动格数（训练营手动操控用）
+    aiOn: cfg.ai !== false,         // AI 开关（训练营可切换）
     selected: 'player',
     dirIndex: 0,
     uni: { attack: false, block: false },  // 通用技能每轮各1次
@@ -752,43 +756,49 @@
 
   /* ---------- 移动 ---------- */
   function movePlayer(dx, dy) {
-    if (state.turn !== 'player' || state.gameOver) return;
-    if (state.usedSkill) { toast('🚫 使用技能后本轮不可再进行移动'); return; }
-    var u = state.player;
-    var nx = u.x + dx, ny = u.y + dy;
+    if (state.gameOver) return;
+    // 训练营：移动“当前选中的单位”（我方或敌方都能操控）
+    var unit = (TRAINING && state.selected === 'enemy') ? state.enemy : state.player;
+    var isMySide = (unit === state.player);
+    if (!TRAINING && state.turn !== 'player') return;
+    if (TRAINING && state.turn === 'enemy' && state.aiOn) { toast('🤖 敌方 AI 行动中，请稍候（或关闭 AI 开关）'); return; }
+    if (isMySide && state.usedSkill) { toast('🚫 使用技能后本轮不可再进行移动'); return; }
+    var used = isMySide ? state.movedThisRound : state.enemyMoved;
+    var cap = isMySide
+      ? Math.max(0, state.moveCap - (state.playerSlow || 0))
+      : Math.max(0, moveCapOf(cfg.enemy) - (state.enemySlow || 0));
+    var nx = unit.x + dx, ny = unit.y + dy;
     if (!inBounds(nx, ny)) { toast('⚠ 到达地图边界'); return; }
     if (mapData[ny][nx] !== 0) { toast('⚠ 该格有障碍物'); return; }
-    // 允许与敌方同格、与苍重叠（战棋可堆叠规则）
-    var effCap = Math.max(0, state.moveCap - (state.playerSlow || 0));
-    if (state.movedThisRound >= effCap || state.ap <= 0) { toast('⚠ 本轮步数已用完'); return; }
-    // 敌方「苍」的吸附范围：靠近被牵引（免费多走一格），远离更费力（多消耗一格）
-    var ec = state.enemyCang;
-    var inEnemyAttract = ec && cangArea && cangArea.attract.some(function (o) {
-      return u.x === ec.x + o[0] && u.y === ec.y + o[1];
+    if (used >= cap) { toast('⚠ 该单位本轮步数已用完'); return; }
+    var ec = isMySide ? state.enemyCang : state.cang;
+    var inAttract = ec && cangArea && cangArea.attract.some(function (o) {
+      return unit.x === ec.x + o[0] && unit.y === ec.y + o[1];
     });
-    var distBefore = ec ? (Math.abs(u.x - ec.x) + Math.abs(u.y - ec.y)) : 0;
-    u.x = nx; u.y = ny;
-    state.movedThisRound++;
+    var distBefore = ec ? (Math.abs(unit.x - ec.x) + Math.abs(unit.y - ec.y)) : 0;
+    unit.x = nx; unit.y = ny;
+    if (isMySide) state.movedThisRound++; else state.enemyMoved++;
     var note = '';
-    if (inEnemyAttract && ec) {
+    if (inAttract && ec) {
       var distAfter = Math.abs(nx - ec.x) + Math.abs(ny - ec.y);
       if (distAfter < distBefore) {
         var fx = nx + dx, fy = ny + dy;
         if (inBounds(fx, fy) && mapData[fy][fx] === 0) {
-          u.x = fx; u.y = fy;
+          unit.x = fx; unit.y = fy;
+          if (isMySide) state.movedThisRound++; else state.enemyMoved++;
           note = '（被「苍」牵引：额外前进一格）';
         } else {
           note = '（被「苍」牵引，但前方受阻）';
         }
       } else if (distAfter > distBefore) {
-        state.movedThisRound += 1; // 远离：多消耗一格
+        if (isMySide) state.movedThisRound += 1; else state.enemyMoved += 1;
         note = '（远离「苍」：额外消耗 1 格移动力）';
       }
     }
-    if (state.movedThisRound >= state.moveCap) state.ap = 0;
     draw();
     renderStatus();
-    toast('我方移动到 (' + u.x + ',' + u.y + ') 剩余 ' + Math.max(0, effCap - state.movedThisRound) + ' 步' + note);
+    var left = Math.max(0, cap - (isMySide ? state.movedThisRound : state.enemyMoved));
+    toast((isMySide ? '我方' : '敌方') + '移动到 (' + unit.x + ',' + unit.y + ') 剩余 ' + left + ' 步' + note);
   }
 
   /* ---------- 技能 ---------- */
@@ -1177,14 +1187,14 @@
     html += '<button class="skill-btn" data-skill="普攻">⚔️ 普攻<span class="cd">' + (atkUsed ? '本轮已用' : '可释放 · 25伤害') + '</span></button>';
     html += '<button class="skill-btn" data-skill="格挡">🛡 格挡<span class="cd">' + (blkUsed ? '本轮已用' : '可释放 · 25护盾') + '</span></button>';
 
-    if (cfg.special) {
+    if (cfg.special && !(TRAINING && state.selected === 'enemy')) {
       var s = SPECIALS[cfg.special];
       var cooling = state.specialUsedRound > 0 && state.round - state.specialUsedRound < 2;
       html += '<div class="skill-group-title">特技（需要奥义点）</div>';
       html += '<button class="skill-btn" data-skill="特技">✨ ' + (s ? s.name : cfg.special) +
         '<span class="cd' + (cooling ? ' cooling' : '') + '">' + (cooling ? '冷却中' : '可用 · CD1轮') + '</span></button>';
     }
-    if (cfg.assists && cfg.assists.length) {
+    if (cfg.assists && cfg.assists.length && !(TRAINING && state.selected === 'enemy')) {
       html += '<div class="skill-group-title">援助（不消耗奥义点）</div>';
       cfg.assists.forEach(function (k) {
         var a = ASSISTS[k];
@@ -1194,9 +1204,13 @@
           '<span class="cd' + (remain > 0 ? ' cooling' : '') + '">' + (remain > 0 ? '冷却中剩' + remain + '轮' : '可用 · CD7轮') + '</span></button>';
       });
     }
-    var own = charSkillList(cfg.player);
+    var controlFoe = TRAINING && state.selected === 'enemy';
+    var own = charSkillList(controlFoe ? cfg.enemy : cfg.player);
+    if (controlFoe) {
+      html += '<div class="skill-group-title" style="color:#ffb3b3;">操控中：' + nameShort(cfg.enemy) + '（训练营·技能点 ' + state.enemySp + '）</div>';
+    }
     if (own.length) {
-      html += '<div class="skill-group-title">角色技能（' + nameShort(cfg.player) + '）</div>';
+      html += '<div class="skill-group-title">角色技能（' + nameShort(controlFoe ? cfg.enemy : cfg.player) + '）</div>';
       own.forEach(function (sk) {
         var eff = SKILL_EFFECTS[sk.name];
         var hasRange = eff && eff.rangeKey && getRange(eff.rangeKey);
@@ -1305,6 +1319,14 @@
       }
       if (kind === 'char') {
         var name = btn.getAttribute('data-name');
+        // 训练营：操控敌方释放技能（自动瞄准我方）
+        if (TRAINING && state.selected === 'enemy') {
+          var forced = pickEnemySkill(name);
+          if (!forced) { toast('「' + name + '」当前无法释放（技能点不足 / 打不到目标 / 无范围数据）'); return; }
+          executeEnemySkill(forced);
+          renderStatus(); renderSkills();
+          return;
+        }
         var detail = '';
         var own = charSkillList(cfg.player);
         for (var i = 0; i < own.length; i++) {
@@ -1564,12 +1586,13 @@
     if (c > 0 && hasSixEyes(cfg.enemy)) c = 1; // 六眼：消耗变为1
     return c;
   }
-  // 生成候选行动（可打到玩家的技能 / 自身增益）
-  function pickEnemySkill() {
+  // 生成候选行动（可打到玩家的技能 / 自身增益）；forceName 可强制只评估某个技能
+  function pickEnemySkill(forceName) {
     var c = CHARACTERS[cfg.enemy];
     var best = null;
     var sureHit = AI.sureHit && state.enemyDomain;
     (c.skills || []).forEach(function (s) {
+      if (forceName && s.name !== forceName) return;
       var short = s.name.replace(/[（(].*$/, '');
       if (short === '普攻' || short === '格挡') return;
       var d = s.detail || '';
@@ -2219,6 +2242,7 @@
     document.getElementById('sel-enemy').classList.toggle('selected', which === 'enemy');
     draw();
     renderStatus();
+    if (TRAINING) renderSkills();
   }
   document.getElementById('sel-me').addEventListener('click', function () { selectUnit('player'); });
   document.getElementById('sel-enemy').addEventListener('click', function () { selectUnit('enemy'); });
@@ -2226,8 +2250,36 @@
   document.getElementById('btn-end-round').addEventListener('click', function () {
     if (state.gameOver) return;
     if (state.turn !== 'player') { toast('⏳ 敌方回合进行中…'); return; }
+    if (TRAINING && !state.aiOn) {
+      // 训练营（AI 关闭）：直接推进轮次，敌方由玩家手动操控
+      state.round++;
+      state.ap = 1;
+      state.sp = Math.min(spCapOf(), state.sp + spRegenOf());
+      state.movedThisRound = 0;
+      state.enemyMoved = 0;
+      state.enemySp = Math.min(spCapForKey(cfg.enemy), state.enemySp + spRegenForKey(cfg.enemy));
+      state.uni = { attack: false, block: false };
+      state.usedSkill = false;
+      state.domExtend = false;
+      if (state.enemyInfinity > 0) state.enemyInfinity--;
+      state.enemyDomExtend = false;
+      document.getElementById('round-info').textContent = '第 ' + state.round + ' 轮';
+      draw(); renderStatus(); renderSkills();
+      toast('⏭ 训练营：第 ' + state.round + ' 轮开始（AI 已关闭，双方都由你操控）');
+      return;
+    }
     enemyTurn();
   });
+  // 训练营：AI 开关
+  var aiToggle = document.getElementById('btn-ai-toggle');
+  if (aiToggle) {
+    aiToggle.textContent = '🤖 AI：' + (state.aiOn ? '开' : '关');
+    aiToggle.addEventListener('click', function () {
+      state.aiOn = !state.aiOn;
+      aiToggle.textContent = '🤖 AI：' + (state.aiOn ? '开' : '关');
+      toast('训练营：敌方 AI 已' + (state.aiOn ? '开启（敌方自动行动）' : '关闭（敌方由你操控）'));
+    });
+  }
   document.getElementById('btn-toggle-left').addEventListener('click', function () {
     document.querySelector('.left-col').classList.toggle('hidden-col');
   });
@@ -2268,7 +2320,9 @@
 
   /* ---------- 初始化 ---------- */
   var diffTag = document.getElementById('diff-tag');
-  if (diffTag) diffTag.textContent = '难度 ' + AI.name;
+  if (diffTag) diffTag.textContent = TRAINING ? '训练营' : ('难度 ' + AI.name);
+  var aiBtnInit = document.getElementById('btn-ai-toggle');
+  if (aiBtnInit && TRAINING) aiBtnInit.style.display = '';
   zoomLabel();
   listClick(document.getElementById('skill-list'));
   renderSkills();
