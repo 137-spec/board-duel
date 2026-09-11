@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>角色介绍 - 同人棋盘对决</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="pages.css">
+  <link rel="stylesheet" href="mobile.css">
+  <script src="mode.js"></script>
+</head>
+<body class="content-page">
+  <div class="wrap">
+    <header class="page-header">
+      <a class="menu-btn small" href="index.html">← 返回主菜单</a>
+      <span class="page-title">角色介绍</span>
+    </header>
+
+    <section class="card">
+      <h2>系列角色</h2>
+      <p class="muted">选择系列查看该系列角色的完整设定与技能介绍：</p>
+      <div class="option-grid" style="margin-top:12px;">
+        <a class="option-card" href="jjk-characters.html" style="text-decoration:none;">
+          <span class="big">《咒术回战》系列角色</span>
+          <span class="sub" id="jjk-count">加载中…</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>其它系列</h2>
+      <p class="muted">其它系列角色写好定稿后会显示在这里。</p>
+    </section>
+  </div>
+
+  <script src="data/gamedata.js"></script>
+  <script>
+    (function () {
+      var total = 0, ready = 0;
+      Object.keys(CHARACTERS).forEach(function (k) {
+        total++;
+        var c = CHARACTERS[k];
+        if (c && c.kind !== 'empty') ready++;
+      });
+      var el = document.getElementById('jjk-count');
+      el.textContent = '共 ' + total + ' 名 · 已编写 ' + ready + ' 名';
+    })();
+  </script>
+</body>
+</html>

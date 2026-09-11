@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>《咒术回战》系列角色介绍 - 同人棋盘对决</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="pages.css">
+  <link rel="stylesheet" href="mobile.css">
+  <script src="mode.js"></script>
+</head>
+<body class="content-page">
+  <div class="wrap">
+    <header class="page-header">
+      <a class="menu-btn small" href="characters.html">← 返回角色介绍</a>
+      <span class="page-title">《咒术回战》系列角色介绍</span>
+    </header>
+
+    <div class="jjk-note" id="summary">加载中…</div>
+    <div class="step-nav" id="jump">快速跳转：</div>
+    <div id="chars"></div>
+  </div>
+
+  <script src="data/gamedata.js"></script>
+  <script>
+    (function () {
+      var PREFIX = '《咒术回战》系列角色：';
+      var CN = { '一': 1, '两': 2, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 };
+      function spCostOf(text) {
+        if (!text) return 0;
+        var m = /消耗([一两二三四五六七八九十\d]+)[个点]?技能点/.exec(text);
+        if (!m) return 0;
+        var s = m[1];
+        if (/^\d+$/.test(s)) return parseInt(s, 10);
+        var t = 0;
+        for (var i = 0; i < s.length; i++) t += (CN[s.charAt(i)] || 0);
+        return t;
+      }
+      function displayName(key) { return key.indexOf(PREFIX) === 0 ? key.slice(PREFIX.length) : key; }
+      function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+
+      var keys = Object.keys(CHARACTERS);
+      var ready = keys.filter(function (k) { return CHARACTERS[k] && CHARACTERS[k].kind !== 'empty'; });
+      var pending = keys.filter(function (k) { return !CHARACTERS[k] || CHARACTERS[k].kind === 'empty'; });
+
+      document.getElementById('summary').innerHTML =
+        '共 ' + keys.length + ' 名角色 · 已编写设定 <b>' + ready.length + '</b> 名 · 待补充 ' + pending.length + ' 名';
+
+      // 快速跳转
+      var jump = document.getElementById('jump');
+      ready.forEach(function (k) {
+        var a = document.createElement('a');
+        a.href = '#' + encodeURIComponent(k);
+        a.className = 'chip';
+        a.style.textDecoration = 'none';
+        a.textContent = CHARACTERS[k].name || displayName(k);
+        jump.appendChild(a);
+        jump.appendChild(document.createTextNode(' '));
+      });
+
+      var box = document.getElementById('chars');
+      var html = '';
+      ready.forEach(function (k) {
+        var c = CHARACTERS[k];
+        html += '<section class="card" id="' + encodeURIComponent(k) + '">';
+        html += '<h2>' + esc(c.name || displayName(k)) + ' <span class="badge ok">已编写</span></h2>';
+        html += '<p class="muted">等级 LV' + (c.level || '—') + ' ｜ 血量 ' + (c.hp || '—') + '</p>';
+        if (c.passives && c.passives.length) {
+          html += '<p style="margin-top:8px;"><b style="color:#fff2c4;">被动：</b></p><ul>';
+          c.passives.forEach(function (p) { html += '<li>' + esc(p) + '</li>'; });
+          html += '</ul>';
+        }
+        if (c.skills && c.skills.length) {
+          html += '<p style="margin-top:8px;"><b style="color:#fff2c4;">技能（' + c.skills.length + '）：</b></p>';
+          html += '<div class="skill-list">';
+          c.skills.forEach(function (s) {
+            var cost = spCostOf(s.detail || '');
+            var tags = [];
+            if (cost > 0) tags.push('消耗 ' + cost + ' 技能点');
+            else tags.push('不消耗技能点');
+            if (s.adapt) tags.push('适应难度 ' + s.adapt);
+            html += '<details style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 12px;">' +
+              '<summary style="cursor:pointer;font-size:.98rem;">' + esc(s.name) +
+              ' <span class="muted" style="font-size:.82rem;">（' + tags.join(' · ') + '）</span></summary>' +
+              '<p style="margin-top:8px;line-height:1.8;font-size:.94rem;">' + esc(s.detail || '（暂无说明）') + '</p>' +
+              '</details>';
+          });
+          html += '</div>';
+        }
+        html += '</section>';
+      });
+
+      if (pending.length) {
+        html += '<section class="card"><h2>待补充角色</h2><ul>';
+        pending.forEach(function (k) {
+          html += '<li>' + esc(displayName(k)) + ' <span class="badge">待补充</span></li>';
+        });
+        html += '</ul><p class="muted" style="margin-top:8px;">这些角色的设定尚未编写。</p></section>';
+      }
+      box.innerHTML = html;
+    })();
+  </script>
+</body>
+</html>
