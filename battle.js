@@ -2528,6 +2528,8 @@ window.__bootBattle = function (cfgIn) {
   var role = null;
   try { role = sessionStorage.getItem('onlineRole'); } catch (e) {}
   var lobby = document.getElementById('net-lobby');
+  var openBtn = document.getElementById('nl-open');
+  if (openBtn) openBtn.addEventListener('click', function () { if (lobby) lobby.classList.remove('hidden'); });
   var NETC = window.DSH_NET;
   if (!role || !NETC || !lobby) {
     window.__bootBattle(null);
