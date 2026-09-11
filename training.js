@@ -2,7 +2,7 @@
 (function () {
   var PREFIX = '《咒术回战》系列角色：';
   var MAP_KEY = '50x50';
-  var sel = { player: null, enemy: null, ai: false, enemySpecial: null, enemyAssists: [] };
+  var sel = { player: null, enemy: null, ai: false, special: null, assists: [], enemySpecial: null, enemyAssists: [] };
 
   function displayName(key) { return key.indexOf(PREFIX) === 0 ? key.slice(PREFIX.length) : key; }
   function readyChars() {
@@ -47,6 +47,41 @@
     });
   }
 
+  // 我方特技 / 援助
+  function renderMyLoadout() {
+    var sBox = document.getElementById('my-special-chips');
+    var aBox = document.getElementById('my-assist-chips');
+    sBox.innerHTML = '';
+    aBox.innerHTML = '';
+    var sKeys = Object.keys(SPECIALS).filter(function (k) { return SPECIALS[k] && SPECIALS[k].kind !== 'empty'; });
+    var aKeys = Object.keys(ASSISTS).filter(function (k) { return ASSISTS[k] && ASSISTS[k].kind !== 'empty'; });
+    if (!sKeys.length) sBox.innerHTML = '<span class="muted">暂无可选特技</span>';
+    sKeys.forEach(function (key) {
+      var chip = document.createElement('span');
+      chip.className = 'chip' + (sel.special === key ? ' selected' : '');
+      chip.textContent = SPECIALS[key].name;
+      chip.addEventListener('click', function () {
+        sel.special = (sel.special === key) ? null : key;
+        renderMyLoadout(); renderSummary();
+      });
+      sBox.appendChild(chip);
+    });
+    if (!aKeys.length) aBox.innerHTML = '<span class="muted">暂无可选援助</span>';
+    aKeys.forEach(function (key) {
+      var chip = document.createElement('span');
+      chip.className = 'chip' + (sel.assists.indexOf(key) >= 0 ? ' selected' : '');
+      chip.textContent = ASSISTS[key].name;
+      chip.addEventListener('click', function () {
+        var i = sel.assists.indexOf(key);
+        if (i >= 0) sel.assists.splice(i, 1);
+        else if (sel.assists.length < 2) sel.assists.push(key);
+        else { alert('我方援助最多 2 个'); return; }
+        renderMyLoadout(); renderSummary();
+      });
+      aBox.appendChild(chip);
+    });
+  }
+
   // 敌方特技 / 援助
   function renderFoeLoadout() {
     var sBox = document.getElementById('foe-special-chips');
@@ -88,13 +123,14 @@
   function renderSummary() {
     var el = document.getElementById('summary');
     if (!sel.player || !sel.enemy) { el.textContent = '请选择我方与敌方角色'; return; }
-    el.innerHTML = '地图：<b>50×50</b> ｜ 我方：<b>' + CHARACTERS[sel.player].name + '</b> ｜ 敌方：<b>' + CHARACTERS[sel.enemy].name +
-      '</b> ｜ AI：<b>' + (sel.ai ? '开启' : '关闭（手动操控）') + '</b>' +
-      ' ｜ 敌方特技：<b>' + (sel.enemySpecial ? SPECIALS[sel.enemySpecial].name : '无') + '</b>' +
-      ' ｜ 敌方援助：<b>' + (sel.enemyAssists.length ? sel.enemyAssists.map(function (k) { return ASSISTS[k].name; }).join('、') : '无') + '</b>';
+    el.innerHTML = '地图：<b>50×50</b> ｜ 我方：<b>' + CHARACTERS[sel.player].name +
+      '</b>（特技 ' + (sel.special ? SPECIALS[sel.special].name : '无') + ' / 援助 ' + (sel.assists.length ? sel.assists.map(function (k) { return ASSISTS[k].name; }).join('、') : '无') + '）' +
+      ' ｜ 敌方：<b>' + CHARACTERS[sel.enemy].name +
+      '</b>（特技 ' + (sel.enemySpecial ? SPECIALS[sel.enemySpecial].name : '无') + ' / 援助 ' + (sel.enemyAssists.length ? sel.enemyAssists.map(function (k) { return ASSISTS[k].name; }).join('、') : '无') + '）' +
+      ' ｜ AI：<b>' + (sel.ai ? '开启' : '关闭（手动操控）') + '</b>';
   }
 
-  function renderAll() { renderGrid('my-grid', 'my-detail', 'player'); renderGrid('foe-grid', 'foe-detail', 'enemy'); renderAi(); renderFoeLoadout(); renderSummary(); }
+  function renderAll() { renderGrid('my-grid', 'my-detail', 'player'); renderGrid('foe-grid', 'foe-detail', 'enemy'); renderMyLoadout(); renderFoeLoadout(); renderAi(); renderSummary(); }
   renderAll();
 
   document.getElementById('btn-start').addEventListener('click', function () {
@@ -104,8 +140,8 @@
       map: MAP_KEY,
       player: sel.player,
       enemy: sel.enemy,
-      special: null,
-      assists: [],
+      special: sel.special,
+      assists: sel.assists,
       enemySpecial: sel.enemySpecial,
       enemyAssists: sel.enemyAssists,
       difficulty: sel.ai ? 'normal' : 'simple',
