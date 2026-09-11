@@ -49,10 +49,10 @@
      说明：通用技能（普攻/格挡）对多数角色价值有限，AI 不再主动格挡（blockAt=0）
      领域不再固定轮次秒开，而是按“时机判定”择机展开 */
   var AI_LEVELS = {
-    simple: { name: '简单', useSkills: false, blockAt: 0, kiting: 0, useDomain: false, minDomainRound: 0, sureHit: false, alignBeam: false },
-    normal: { name: '普通', useSkills: true, blockAt: 0, kiting: 0, useDomain: false, minDomainRound: 0, sureHit: false, alignBeam: false },
-    hard: { name: '困难', useSkills: true, blockAt: 0, kiting: 2, useDomain: true, minDomainRound: 3, sureHit: false, alignBeam: true },
-    brutal: { name: '强化', useSkills: true, blockAt: 0, kiting: 2, useDomain: true, minDomainRound: 2, sureHit: true, alignBeam: true }
+    simple: { name: '简单', useSkills: false, blockAt: 0, kiting: 0, useDomain: false, minDomainRound: 0, sureHit: false, alignBeam: false, summon: false, place: false, summonCare: 0 },
+    normal: { name: '普通', useSkills: true, blockAt: 0, kiting: 0, useDomain: false, minDomainRound: 0, sureHit: false, alignBeam: false, summon: true, place: true, summonCare: 0.25 },
+    hard: { name: '困难', useSkills: true, blockAt: 0, kiting: 2, useDomain: true, minDomainRound: 3, sureHit: false, alignBeam: true, summon: true, place: true, summonCare: 0.5 },
+    brutal: { name: '强化', useSkills: true, blockAt: 0, kiting: 2, useDomain: true, minDomainRound: 2, sureHit: true, alignBeam: true, summon: true, place: true, summonCare: 0.7 }
   };
   var AI = AI_LEVELS[cfg.difficulty] || AI_LEVELS.simple;
 
@@ -231,6 +231,9 @@
     turn: 'player',
     gameOver: false,
     enemyAttractNoted: false,
+    enemyShiki: null,               // 敌方式神 {kind,x,y,hp,maxHp,atk,move,rangeKey,dmgType,heal}
+    enemyCang: null,                // 敌方放置的「苍」{x,y}
+    enemySummonRound: 0,            // 敌方上次召唤轮次
     enemySp: 1,                     // 敌方技能点（AI 用技能）
     enemyOp: 2,                     // 敌方奥义点（开局2，命中+1，大招消耗）
     enemyUsed: {},                  // 敌方自身增益技能使用记录
@@ -393,6 +396,14 @@
       mmCtx.fillStyle = '#2b1a6b';
       mmCtx.fillRect(state.cang.x * MM, state.cang.y * MM, MM, MM);
     }
+    if (state.enemyCang) {
+      mmCtx.fillStyle = '#7a2bd6';
+      mmCtx.fillRect(state.enemyCang.x * MM, state.enemyCang.y * MM, MM, MM);
+    }
+    if (state.enemyShiki) {
+      mmCtx.fillStyle = '#b8860b';
+      mmCtx.fillRect(state.enemyShiki.x * MM, state.enemyShiki.y * MM, MM, MM);
+    }
     if (state.maha) {
       mmCtx.fillStyle = '#d4a017';
       mmCtx.fillRect(state.maha.x * MM, state.maha.y * MM, MM, MM);
@@ -506,6 +517,7 @@
     }
     ctx.stroke();
     drawCang();
+    drawEnemyObjects();
     drawUnit(state.player, '#3f8cff', '#eaf4ff');
     drawUnit(state.enemy, '#ff5252', '#ffecec');
     drawShiki();
@@ -563,6 +575,44 @@
     ctx.textBaseline = 'middle';
     ctx.fillText('苍', cx, cy);
   }
+  function drawEnemyObjects() {
+    // 敌方「苍」
+    if (state.enemyCang) {
+      var cx = (state.enemyCang.x + 0.5) * CELL - camX, cy = (state.enemyCang.y + 0.5) * CELL - camY;
+      if (cx > -24 && cy > -24 && cx < canvas.width + 24 && cy < canvas.height + 24) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, CELL * 0.4, 0, Math.PI * 2);
+        ctx.fillStyle = '#7a2bd6';
+        ctx.fill();
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold ' + Math.min(15, Math.round(CELL * 0.5)) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('苍', cx, cy);
+      }
+    }
+    // 敌方式神
+    if (state.enemyShiki) {
+      var sx = (state.enemyShiki.x + 0.5) * CELL - camX, sy = (state.enemyShiki.y + 0.5) * CELL - camY;
+      if (sx > -24 && sy > -24 && sx < canvas.width + 24 && sy < canvas.height + 24) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, CELL * 0.42, 0, Math.PI * 2);
+        ctx.fillStyle = '#b8860b';
+        ctx.fill();
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold ' + Math.min(15, Math.round(CELL * 0.52)) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(state.enemyShiki.kind).charAt(0), sx, sy);
+      }
+    }
+  }
   function drawUnit(u, fill, textColor) {
     var cx = (u.x + 0.5) * CELL - camX, cy = (u.y + 0.5) * CELL - camY;
     if (cx < -24 || cy < -24 || cx > canvas.width + 24 || cy > canvas.height + 24) return;
@@ -618,6 +668,11 @@
     var chips = [];
     if (u.shield > 0) chips.push('🛡 护盾 ' + u.shield);
     if (state.cang) chips.push('🌀 场上有「苍」');
+    if (state.enemyCang) chips.push('🌀 敌方「苍」在场上（每轮结束伤害你）');
+    if (state.enemyShiki) chips.push('👹 敌方式神「' + state.enemyShiki.kind + '」 ' + state.enemyShiki.hp + '/' + state.enemyShiki.maxHp);
+    if (state.shiki) chips.push('🦉 我方式神「' + state.shiki.kind + '」 ' + state.shiki.hp + '/' + state.shiki.maxHp);
+    if (state.enemyInfinity > 0) chips.push('🌀 敌方「无限」（剩 ' + state.enemyInfinity + ' 轮）·你的攻击无法命中');
+    if (state.enemyDomExtend) chips.push('🔰 敌方「领域展延」·你的伤害-30%');
     if (state.selected === 'player') {
       if (state.usedSkill) chips.push('🚫 已用技能·不可移动');
       if (state.infinity > 0) chips.push('🌀 无限（剩 ' + state.infinity + ' 轮）·敌方攻击无法命中/无法靠近');
@@ -814,6 +869,15 @@
 
     if (eff.type === 'attack') {
       if (eff.needOp) state.op = 0; // 大招消耗全部奥义点
+      // 打到敌方召唤物
+      if (state.enemyShiki && cell.x === state.enemyShiki.x && cell.y === state.enemyShiki.y) {
+        state.enemyShiki.hp = Math.max(0, state.enemyShiki.hp - eff.dmg);
+        var deadS = state.enemyShiki.hp <= 0;
+        toast('⚔️「' + name + '」命中敌方式神「' + state.enemyShiki.kind + '」：' + eff.dmg + ' 点伤害' + (deadS ? '（击破！）' : '（剩 ' + state.enemyShiki.hp + ' 血）'));
+        if (deadS) state.enemyShiki = null;
+        draw(); renderStatus(); renderSkills();
+        return;
+      }
       var dmg = damageEnemy(eff.dmg, false);
       if (dmg === 0) { draw(); renderStatus(); return; }
       earnOp();
@@ -846,6 +910,13 @@
         if (d === 0 && state.enemyInfinity > 0 && !eff.ignoreInfinity) { draw(); renderStatus(); return; }
         earnOp();
         toast('⚔️「' + name + '」命中！对 ' + nameShort(cfg.enemy) + ' 造成 ' + d + ' 点伤害（消耗 ' + cost + ' 技能点）');
+        // 范围技能同时波及敌方召唤物
+        if (state.enemyShiki && aim.cells.some(function (c) { return c.x === state.enemyShiki.x && c.y === state.enemyShiki.y; })) {
+          state.enemyShiki.hp = Math.max(0, state.enemyShiki.hp - base);
+          var deadS2 = state.enemyShiki.hp <= 0;
+          toast('💥 范围波及敌方式神「' + state.enemyShiki.kind + '」：' + base + ' 点伤害' + (deadS2 ? '（击破！）' : ''));
+          if (deadS2) state.enemyShiki = null;
+        }
       } else {
         toast('「' + name + '」范围内没有敌人（朝向 ' + DIRS[state.dirIndex].label + '）');
       }
@@ -1382,6 +1453,193 @@
       + (ignoreShield ? '（无视护盾/无限）' : '') + '（消耗 ' + act.cost + ' 技能点）');
   }
   /* 敌方玩家攻击结算：通用技能优先级 → 普攻保底 */
+  /* ============================================================
+     召唤类 AI：会召唤式神、并按难度决定“收回保命”或“舍弃换优势”
+     放置类 AI：按场上情况选择放置位置（如「苍」压在玩家身上）
+     ============================================================ */
+  function parseShikiStats(name, detail) {
+    var d = detail || '';
+    var hp = (/具有\s*(\d+)\s*点血/.exec(d) || [])[1];
+    var atk = (/造成\s*(\d+)\s*点/.exec(d) || [])[1];
+    var mv = (/(\d+)\s*格的移动/.exec(d) || [])[1];
+    var heal = (/回复\s*(\d+)\s*点血/.exec(d) || [])[1];
+    var dmgType = /雷电/.test(d) ? '雷电' : (/正向能量/.test(d) ? '正向能量' : '物理');
+    return {
+      hp: hp ? parseInt(hp, 10) : 200,
+      atk: atk ? parseInt(atk, 10) : 50,
+      move: mv ? parseInt(mv, 10) : 6,
+      heal: heal ? parseInt(heal, 10) : 0,
+      dmgType: dmgType
+    };
+  }
+  // 找一个可用的召唤技能（数据驱动）
+  function findSummonSkill() {
+    var c = CHARACTERS[cfg.enemy];
+    var found = null;
+    (c.skills || []).forEach(function (s) {
+      if (found) return;
+      var short = s.name.replace(/[（(].*$/, '');
+      if (short !== '十种影法术') return;
+      if (/光环|魔虚罗的光环/.test(s.name)) return;
+      var cost = enemySkillCost(s);
+      if (cost > state.enemySp) return;
+      var eff = SKILL_EFFECTS[s.name];
+      var rk = (eff && eff.rangeKey) || (displayName(cfg.enemy) + '十种影法术召唤范围');
+      var info = getRange(rk);
+      if (!info) return;
+      var kindM = /十种影法术（(.+?)）/.exec(s.name);
+      var kind = kindM ? kindM[1] : short;
+      found = { name: s.name, cost: cost, kind: kind, cells: info.cells, detail: s.detail || '' };
+    });
+    return found;
+  }
+  // 放置类技能（如 苍 / 苍（定点））
+  function findPlaceSkill() {
+    var c = CHARACTERS[cfg.enemy];
+    var found = null;
+    (c.skills || []).forEach(function (s) {
+      if (found) return;
+      var eff = SKILL_EFFECTS[s.name];
+      if (!eff || eff.type !== 'placeCang') return;
+      var cost = enemySkillCost(s);
+      if (cost > state.enemySp) return;
+      var info = getRange(eff.rangeKey);
+      if (!info) return;
+      found = { name: s.name, cost: cost, cells: info.cells, detail: s.detail || '', rotate: !!eff.rotate };
+    });
+    return found;
+  }
+  // 放置：优先压玩家所在格，其次挑最接近玩家的格子
+  function enemyDoPlace() {
+    if (!AI.place || state.enemyCang) return false;
+    if (state.player.hp <= 0) return false;
+    var sk = findPlaceSkill();
+    if (!sk) return false;
+    var cells = [];
+    sk.cells.forEach(function (o) {
+      var dx = o[0], dy = o[1];
+      if (sk.rotate) {
+        for (var k = 0; k < state.dirIndex; k++) { var t = dx; dx = -dy; dy = t; }
+      }
+      var x = state.enemy.x + dx, y = state.enemy.y + dy;
+      if (inBounds(x, y) && mapData[y][x] === 0) cells.push({ x: x, y: y });
+    });
+    if (!cells.length) return false;
+    // 优先放在玩家身上；否则放在离玩家最近、且不影响自己移动的格子
+    var target = null, bestD = 1e9;
+    cells.forEach(function (c) {
+      var d = Math.abs(c.x - state.player.x) + Math.abs(c.y - state.player.y);
+      var onPlayer = (c.x === state.player.x && c.y === state.player.y);
+      var score = onPlayer ? -1 : d;
+      if (score < bestD) { bestD = score; target = c; }
+    });
+    if (!target) return false;
+    state.enemySp -= sk.cost;
+    state.enemyCang = { x: target.x, y: target.y };
+    var msg = '🌀 ' + nameShort(cfg.enemy) + ' 使用「' + sk.name + '」在 (' + target.x + ',' + target.y + ') 生成「苍」';
+    if (cangArea) {
+      var inside = cangArea.attack.some(function (o) { return state.player.x === state.enemyCang.x + o[0] && state.player.y === state.enemyCang.y + o[1]; });
+      if (inside) {
+        var d0 = applyDamage(state.player, 75);
+        msg += '，你正处于伤害范围，受到 ' + d0 + ' 点伤害！';
+      } else {
+        msg += '（压制走位）';
+      }
+    }
+    toast(msg + '（消耗 ' + sk.cost + ' 技能点）');
+    return true;
+  }
+  // 召唤：按场上情况决定是否召唤
+  function enemyDoSummon() {
+    if (!AI.summon || state.enemyShiki) return false;
+    if (state.round === state.enemySummonRound) return false;
+    var sk = findSummonSkill();
+    if (!sk) return false;
+    var cheb = Math.max(Math.abs(state.enemy.x - state.player.x), Math.abs(state.enemy.y - state.player.y));
+    if (cheb <= 1 && AI.summonCare >= 0.5) return false; // 困难/强化：贴身先打，不急着召唤
+    var stats = parseShikiStats(sk.kind, sk.detail);
+    var rangeKey = SK_PREFIX_ANY() + '其余十种影法术召唤出的式神攻击范围';
+    var info = getRange((SHIKIGAMI[sk.kind] && SHIKIGAMI[sk.kind].rangeKey) || rangeKey);
+    // 落点：召唤范围内离玩家最近的合法格（作为前线）
+    var best = null, bestD = 1e9;
+    sk.cells.forEach(function (o) {
+      var x = state.enemy.x + o[0], y = state.enemy.y + o[1];
+      if (!inBounds(x, y) || mapData[y][x] !== 0) return;
+      if (x === state.player.x && y === state.player.y) return;
+      var d = Math.abs(x - state.player.x) + Math.abs(y - state.player.y);
+      if (d < bestD) { bestD = d; best = { x: x, y: y }; }
+    });
+    if (!best) return false;
+    state.enemySp -= sk.cost;
+    state.enemySummonRound = state.round;
+    state.enemyShiki = {
+      kind: sk.kind, x: best.x, y: best.y,
+      hp: stats.hp, maxHp: stats.hp, atk: stats.atk, move: stats.move,
+      heal: stats.heal, dmgType: stats.dmgType,
+      rangeKey: (SHIKIGAMI[sk.kind] && SHIKIGAMI[sk.kind].rangeKey) || (displayName(cfg.enemy) + '其余十种影法术召唤出的式神攻击范围')
+    };
+    toast('🦉 ' + nameShort(cfg.enemy) + ' 召唤式神「' + sk.kind + '」！（' + stats.hp + '血 · ' + stats.move + '格 · 每轮 ' + stats.atk + ' ' + stats.dmgType + '）');
+    return true;
+  }
+  // 收回/舍弃：按难度与场上形势判断
+  function enemyDecideSummonFate() {
+    var s = state.enemyShiki;
+    if (!s) return;
+    if (!AI.summonCare) return; // 简单/普通：不操心，让它自己打
+    var ratio = s.hp / s.maxHp;
+    if (ratio > AI.summonCare) return;
+    var pMax = CHARACTERS[cfg.player].hp || 1;
+    var eMax = CHARACTERS[cfg.enemy].hp || 1;
+    var pRatio = state.player.hp / pMax;
+    var eRatio = state.enemy.hp / eMax;
+    // 玩家已经残血 → 舍弃式神换进攻节奏；自己快被打崩 → 也留着当肉盾
+    if (pRatio <= 0.35 || eRatio <= 0.3) {
+      toast('⚔️ ' + nameShort(cfg.enemy) + ' 舍弃了式神「' + s.kind + '」（换取进攻优势）');
+      return;
+    }
+    // 否则收回保命（收回后可再次召唤）
+    state.enemyShiki = null;
+    toast('📡 ' + nameShort(cfg.enemy) + ' 收回了式神「' + s.kind + '」（保存实力，之后可再召唤）');
+  }
+  function SK_PREFIX_ANY() { return displayName(cfg.enemy); }
+  // 敌方式神行动
+  function enemyShikiAct() {
+    var s = state.enemyShiki;
+    if (!s || state.gameOver) return;
+    for (var i = 0; i < s.move; i++) {
+      if (enemyShikiInRange()) break;
+      var dx = state.player.x - s.x, dy = state.player.y - s.y;
+      var moved = false;
+      var tries = [];
+      if (dx !== 0) tries.push([dx > 0 ? 1 : -1, 0]);
+      if (dy !== 0) tries.push([0, dy > 0 ? 1 : -1]);
+      for (var t = 0; t < tries.length; t++) {
+        var nx = s.x + tries[t][0], ny = s.y + tries[t][1];
+        if (inBounds(nx, ny) && mapData[ny][nx] === 0) { s.x = nx; s.y = ny; moved = true; break; }
+      }
+      if (!moved) break;
+    }
+    if (enemyShikiInRange()) {
+      if (state.infinity > 0) {
+        toast('🛡「无限」使敌方式神的攻击无法命中！');
+      } else {
+        var d = applyDamage(state.player, s.atk);
+        toast('🦉 敌方式神「' + s.kind + '」攻击你：' + d + ' 点' + s.dmgType + '伤害');
+        checkEnd();
+      }
+    }
+  }
+  function enemyShikiInRange() {
+    var s = state.enemyShiki;
+    if (!s) return false;
+    if (s.x === state.player.x && s.y === state.player.y) return true;
+    var info = getRange(s.rangeKey);
+    if (!info) return Math.abs(s.x - state.player.x) + Math.abs(s.y - state.player.y) <= 1;
+    return info.cells.some(function (o) {
+      return state.player.x === s.x + o[0] && state.player.y === s.y + o[1];
+    });
+  }
+
   function enemyAttackPlayer() {
     var e = state.enemy;
     var eMax = CHARACTERS[cfg.enemy].hp || 1;
@@ -1461,6 +1719,30 @@
     mahaAct(); // 玩家召唤的魔虚罗先行（AI操控）
     shikiAct(); // 式神也先行
     if (state.gameOver) return;
+    // 敌方式神：先决定命运（收回保命 / 舍弃换优势），再行动；随后按需召唤与放置
+    enemyDecideSummonFate();
+    enemyShikiAct();
+    if (state.gameOver) return;
+    enemyDoSummon();
+    enemyDoPlace();
+    draw(); renderStatus();
+    if (state.gameOver) return;
+    // 敌方「苍」的每轮结束效果
+    if (state.enemyCang && cangArea && state.player.hp > 0) {
+      var inEC = cangArea.attack.some(function (o) {
+        return state.player.x === state.enemyCang.x + o[0] && state.player.y === state.enemyCang.y + o[1];
+      });
+      if (inEC) {
+        var dEC = applyDamage(state.player, 75);
+        toast('🌀 敌方「苍」每轮结束：你受到 ' + dEC + ' 点伤害');
+        checkEnd();
+      }
+    }
+    if (state.gameOver) return;
+    // 敌方式神每轮自愈
+    if (state.enemyShiki && state.enemyShiki.heal > 0) {
+      state.enemyShiki.hp = Math.min(state.enemyShiki.maxHp, state.enemyShiki.hp + state.enemyShiki.heal);
+    }
     // 敌方宿傩：按“时机判定”择机展开领域（不再固定轮次秒开）
     if (isSukunaKey(cfg.enemy) && enemyShouldOpenDomain()) {
       state.enemyDomain = { rounds: 5 };
