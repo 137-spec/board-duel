@@ -144,6 +144,17 @@
     var diffWrap = document.getElementById('diff-chips');
     if (diffWrap) diffWrap.style.display = netMode ? 'none' : '';
     if (!netMode) renderDifficultyChips();
+    // 联机模式：不替对手选特技/援助（各自操控自己的角色）
+    var esH = document.getElementById('enemy-special-h');
+    var eaH = document.getElementById('enemy-assist-h');
+    var esC = document.getElementById('enemy-special-chips');
+    var eaC = document.getElementById('enemy-assist-chips');
+    if (esH) esH.style.display = netMode ? 'none' : '';
+    if (eaH) eaH.style.display = netMode ? 'none' : '';
+    if (esC) esC.style.display = netMode ? 'none' : '';
+    if (eaC) eaC.style.display = netMode ? 'none' : '';
+    var ecH = document.getElementById('enemy-char-h');
+    if (ecH) ecH.textContent = netMode ? '选择对手角色（1 个）' : '选择敌方角色（1 个）';
     // 敌方角色（选 1 个 或 随机）
     enemyChips.innerHTML = '';
     var randChip = document.createElement('span');
@@ -265,8 +276,8 @@
       enemy: enemy,
       special: sel.special,
       assists: sel.assists,
-      enemySpecial: sel.enemySpecial,
-      enemyAssists: sel.enemyAssists,
+      enemySpecial: (sel.mode === 'lan' || sel.mode === 'online') ? null : sel.enemySpecial,
+      enemyAssists: (sel.mode === 'lan' || sel.mode === 'online') ? [] : sel.enemyAssists,
       difficulty: sel.difficulty || 'simple'
     };
     try {
