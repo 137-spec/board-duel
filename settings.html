@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>设置 - 同人棋盘对决</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="pages.css">
+  <link rel="stylesheet" href="mobile.css">
+  <script src="mode.js"></script>
+</head>
+<body class="content-page">
+  <div class="wrap">
+    <header class="page-header">
+      <a class="menu-btn small" href="index.html">← 返回主菜单</a>
+      <span class="page-title">设置</span>
+    </header>
+
+    <section class="card">
+      <h2>🖥 显示模式</h2>
+      <p class="muted">电脑模式适合大屏；手机模式按手机比例显示，可横屏游玩。</p>
+      <div class="mode-picker" style="justify-content:flex-start;">
+        <button type="button" data-mode="pc">🖥 电脑模式</button>
+        <button type="button" data-mode="phone">📱 手机模式</button>
+        <button type="button" data-rotate>🔄 横屏 / 竖屏</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>🎁 兑换码</h2>
+      <p class="muted">输入兑换码领取奖励（金币、角色解锁等）。</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center;">
+        <input id="code-input" type="text" placeholder="请输入兑换码"
+               style="flex:1;min-width:180px;padding:11px 14px;border-radius:10px;border:1px solid rgba(255,215,94,.4);background:rgba(255,255,255,.06);color:#f3ecff;font-family:inherit;font-size:1rem;outline:none;"
+               autocomplete="off" spellcheck="false">
+        <button class="menu-btn small" id="code-btn" style="margin:0;">兑换</button>
+      </div>
+      <p id="code-msg" style="margin-top:12px;font-size:.95rem;min-height:1.4em;"></p>
+      <p class="muted" style="margin-top:6px;">当前金币：<b id="coin-now">0</b></p>
+    </section>
+
+    <section class="card">
+      <h2>ℹ️ 关于</h2>
+      <p class="muted">同人棋盘对决 · 类战棋同人游戏（单人 1v1）<br>
+      数据版本：代码定稿版（角色 / 技能范围均已写入代码）<br>
+      技能范围与角色设定均来自作者原创设定，仅供同人娱乐，请勿商用。</p>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      // 兑换码表（写在代码里；后续可扩展）
+      var CODES = {
+        'TONG REN': { coin: 1000, msg: '兑换成功：金币 +1000' },
+        'TONGREN2026': { coin: 1000, msg: '兑换成功：金币 +1000' },
+        'WU TIAO WU': { coin: 500, msg: '兑换成功：金币 +500' },
+        'SUKUNA': { coin: 500, msg: '兑换成功：金币 +500' }
+      };
+      var KEY = 'boardDuelCoins';
+      var USED = 'boardDuelUsedCodes';
+      function getCoin() { try { return parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch (e) { return 0; } }
+      function setCoin(v) { try { localStorage.setItem(KEY, String(v)); } catch (e) {} }
+      function usedCodes() { try { return JSON.parse(localStorage.getItem(USED) || '{}'); } catch (e) { return {}; } }
+      function saveUsed(o) { try { localStorage.setItem(USED, JSON.stringify(o)); } catch (e) {} }
+
+      var input = document.getElementById('code-input');
+      var msg = document.getElementById('code-msg');
+      var coinNow = document.getElementById('coin-now');
+      function refresh() { coinNow.textContent = getCoin(); }
+      refresh();
+
+      function redeem() {
+        var code = (input.value || '').trim().toUpperCase();
+        if (!code) { msg.style.color = '#ffb3b3'; msg.textContent = '请先输入兑换码'; return; }
+        var hit = CODES[code];
+        if (!hit) { msg.style.color = '#ffb3b3'; msg.textContent = '兑换码无效（注意大小写与空格）'; return; }
+        var used = usedCodes();
+        if (used[code]) { msg.style.color = '#ffb3b3'; msg.textContent = '该兑换码已经使用过了'; return; }
+        used[code] = 1; saveUsed(used);
+        setCoin(getCoin() + hit.coin);
+        refresh();
+        msg.style.color = '#a7e98c';
+        msg.textContent = '✅ ' + hit.msg + '（当前金币 ' + getCoin() + '）';
+        input.value = '';
+      }
+      document.getElementById('code-btn').addEventListener('click', redeem);
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') redeem(); });
+    })();
+  </script>
+</body>
+</html>

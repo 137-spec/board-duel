@@ -27,8 +27,7 @@
       <a class="menu-btn" href="characters.html">👤 角色介绍</a>
       <button class="menu-btn" data-action="soon">🏋️ 训练营</button>
       <button class="menu-btn" data-action="soon">🌟 挑战模式</button>
-      <button class="menu-btn" data-action="soon">🎮 按键设定</button>
-      <button class="menu-btn" data-action="soon">🎁 兑换码</button>
+      <a class="menu-btn" href="settings.html">⚙️ 设置</a>
     </nav>
   </main>
 
@@ -45,5 +44,15 @@
   <script src="data/maps.js"></script>
   <script src="data/skills.js"></script>
   <script src="main.js"></script>
+  <script>
+    // 主界面金币：读取兑换码/游戏内存下的金币
+    (function () {
+      try {
+        var c = parseInt(localStorage.getItem('boardDuelCoins') || '0', 10) || 0;
+        var el = document.getElementById('coin');
+        if (el) el.textContent = c;
+      } catch (e) {}
+    })();
+  </script>
 </body>
 </html>
