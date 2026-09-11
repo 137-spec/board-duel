@@ -700,6 +700,7 @@
     if (state.selected === 'player') {
       if (state.usedSkill) chips.push('🚫 已用技能·不可移动');
       if (state.infinity > 0) chips.push('🌀 无限（剩 ' + state.infinity + ' 轮）·敌方攻击无法命中/无法靠近');
+      if (state.chant) chips.push('🕉 咒词吟唱待发（下一个有吟唱形态的技能将以吟唱版释放）');
       if (state.domExtend) chips.push('🔰 领域展延·受伤-30%·无法使用其余技能');
       if (state.domain) chips.push('🌐 领域展开中（剩 ' + state.domain.rounds + ' 轮）·每轮+20%粉尘');
       if (state.enemyDomain) chips.push('🌐 敌方领域展开中（剩 ' + state.enemyDomain.rounds + ' 轮）');
@@ -850,7 +851,40 @@
     return [200, 250, 300, 400, 500][tier];
   }
 
+  /* ---------- 咒词吟唱（《咒术回战》系列角色专用） ---------- */
+  function isJJKChar(key) { return key.indexOf('《咒术回战》系列角色：') === 0; }
+  // 找到某技能的“吟唱形态”（数据里写成「XX（咒词吟唱）」）
+  function findChantVariant(name) {
+    var c = CHARACTERS[cfg.player];
+    if (!c || !c.skills) return null;
+    var found = null;
+    c.skills.forEach(function (s) {
+      if (found) return;
+      var m = /^(.+?)（咒词吟唱）$/.exec(s.name);
+      if (m && m[1] === name) found = s.name;
+    });
+    return found;
+  }
+  function hasAnyChantVariant() {
+    var c = CHARACTERS[cfg.player];
+    if (!c || !c.skills) return false;
+    return c.skills.some(function (s) { return /（咒词吟唱）$/.test(s.name); });
+  }
+
   function startAiming(name) {
+    // 咒词吟唱：目标是自身，点自己发动，点空白取消
+    if (name === '咒词吟唱') {
+      if (!hasAnyChantVariant()) { toast('该角色暂无咒词吟唱效果'); return; }
+      state.aiming = {
+        name: '咒词吟唱',
+        cells: [{ x: state.player.x, y: state.player.y }],
+        eff: { type: 'chant' },
+        rk: null
+      };
+      draw();
+      toast('🕉 点击「自己」发动咒词吟唱（消耗 1 技能点），点空白处取消');
+      return;
+    }
     var eff = SKILL_EFFECTS[name];
     if (!eff || !eff.rangeKey) { useRangeSkill(name); return; }
     // 开：按当前粉尘值选档位范围
@@ -885,6 +919,57 @@
     var eff = aim.eff;
     var name = aim.name;
 
+    // 咒词吟唱：点自己发动（消耗 1 技能点），之后下一个有吟唱形态的技能以吟唱版释放
+    if (eff.type === 'chant') {
+      if (!hasAnyChantVariant()) { toast('该角色暂无咒词吟唱效果'); state.aiming = null; draw(); return; }
+      if (state.sp < 1) { toast('⚠ 技能点不足（咒词吟唱需要 1 点）'); return; }
+      state.sp -= 1;
+      state.chant = true;
+      state.aiming = null;
+      state.usedSkill = true;
+      toast('🕉 咒词吟唱发动！（消耗 1 技能点）下一个有吟唱形态的技能将以吟唱版释放');
+      draw(); renderStatus(); renderSkills();
+      return;
+    }
+
+    // 已发动吟唱 → 该技能若有吟唱形态，自动替换为吟唱版
+    var chantApplied = false;
+    if (state.chant) {
+      var chanted = findChantVariant(name);
+      if (chanted) {
+        var ce = SKILL_EFFECTS[chanted];
+        if (ce && ce.rangeKey) {
+          name = chanted;
+          eff = ce;
+          aim.eff = ce;
+          aim.name = chanted;
+          aim.rk = ce.rangeKey;
+          state.chant = false;
+          chantApplied = true;
+          // 重新计算瞄准格（吟唱版范围可能不同）
+          var cinfo = getRange(ce.rangeKey);
+          if (cinfo) {
+            var ccells = [];
+            cinfo.cells.forEach(function (o) {
+              var dx = o[0], dy = o[1];
+              if (ce.rotate) {
+                for (var k2 = 0; k2 < state.dirIndex; k2++) { var t2 = dx; dx = -dy; dy = t2; }
+              }
+              var x2 = state.player.x + dx, y2 = state.player.y + dy;
+              if (inBounds(x2, y2)) ccells.push({ x: x2, y: y2 });
+            });
+            if (isEnemyAt(state.player.x, state.player.y)) ccells.push({ x: state.player.x, y: state.player.y });
+            aim.cells = ccells;
+          }
+          if (!aim.cells.some(function (c) { return c.x === cell.x && c.y === cell.y; })) {
+            toast('「' + name + '」吟唱版范围不包含该格，请重新点击目标');
+            draw();
+            return;
+          }
+          toast('🕉 咒词吟唱生效：以「' + name + '」释放！');
+        }
+      }
+    }
     // 前置校验（不满足则保持瞄准并返回）
     if (eff.needOp && state.op < eff.needOp) {
       toast('⚠ 「' + name + '」奥义点不足（需要 ' + eff.needOp + '，当前 ' + state.op + '）');
@@ -1044,7 +1129,16 @@
   function renderSkills() {
     var list = document.getElementById('skill-list');
     var html = '';
-    html += '<div class="skill-group-title">通用技能</div>';
+    // 咒词吟唱（《咒术回战》系列角色：列表最上方）
+    if (isJJKChar(cfg.player)) {
+      var canChant = hasAnyChantVariant();
+      var chantBadge = state.chant ? '吟唱待发' : (canChant ? '消耗 1 技能点' : '该角色暂无效果');
+      html += '<button class="skill-btn" data-skill="chant" style="border-color:#b07eff;">🕉 咒词吟唱<span class="cd' +
+        (state.chant ? ' cooling' : '') + '">' + chantBadge + '</span></button>';
+      html += '<div class="skill-group-title">通用技能</div>';
+    } else {
+      html += '<div class="skill-group-title">通用技能</div>';
+    }
     var atkUsed = state.uni.attack, blkUsed = state.uni.block;
     html += '<button class="skill-btn" data-skill="普攻">⚔️ 普攻<span class="cd">' + (atkUsed ? '本轮已用' : '可释放 · 25伤害') + '</span></button>';
     html += '<button class="skill-btn" data-skill="格挡">🛡 格挡<span class="cd">' + (blkUsed ? '本轮已用' : '可释放 · 25护盾') + '</span></button>';
@@ -1128,6 +1222,10 @@
         state.shiki = null;
         toast('📡 式神已收回（未阵亡，可再次召唤）');
         renderSkills();
+        return;
+      }
+      if (kind === 'chant') {
+        startAiming('咒词吟唱');
         return;
       }
       if (kind === '普攻') {
