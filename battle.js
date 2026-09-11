@@ -113,8 +113,8 @@
   };
   var SHIKIGAMI = {
     '鵺': { hp: 300, atk: 100, move: 8, rangeKey: SK_PREFIX + '鵺攻击范围', dmgType: '雷电' },
-    '鄂吐': { hp: 500, atk: 100, move: 8, heal: 300, rangeKey: SK_PREFIX + '其余十种影法术召唤出的式神攻击范围', dmgType: '正向能量' },
-    '魔虚罗': { hp: 600, atk: 150, move: 8, heal: 150, adapt: true, rangeKey: SK_PREFIX + '其余十种影法术召唤出的式神攻击范围', dmgType: '正向能量' }
+    '鄂吐': { hp: 500, atk: 100, move: 8, heal: 500, rangeKey: SK_PREFIX + '其余十种影法术召唤出的式神攻击范围', dmgType: '正向能量' },
+    '魔虚罗': { hp: 600, atk: 150, move: 8, heal: 450, adapt: true, rangeKey: SK_PREFIX + '其余十种影法术召唤出的式神攻击范围', dmgType: '正向能量' }
   };
 
   /* ---------- 范围解析 ----------
@@ -1120,9 +1120,25 @@
       state.enemySlow += 5;
       toast('🌐 领域展开「伏魔御厨子」！持续5轮：每轮结束两次「解」伤害，敌方-5移动，粉尘每轮+20%，期间不获奥义点');
     } else if (eff.type === 'shikigami') {
-      var sd = SHIKIGAMI[eff.key];
-      state.shiki = { kind: eff.key, x: cell.x, y: cell.y, hp: sd.hp, maxHp: sd.hp, heal: sd.heal || 0, rangeKey: sd.rangeKey };
-      toast('🦉 召唤式神「' + eff.key + '」：' + sd.hp + ' 血 · ' + sd.move + ' 格移动 · 每轮 ' + sd.atk + ' 点' + sd.dmgType + '伤害');
+      // 数值以角色数据为准（数据驱动），表里只提供攻击范围键等兜底
+      var sdTable = SHIKIGAMI[eff.key] || {};
+      var sDetail = '';
+      var ownList = charSkillList(cfg.player);
+      for (var si = 0; si < ownList.length; si++) {
+        if (ownList[si].name === name) { sDetail = ownList[si].detail || ''; break; }
+      }
+      var sdP = parseShikiStats(eff.key, sDetail);
+      var sd = {
+        hp: sdP.hp || sdTable.hp || 200,
+        atk: sdP.atk || sdTable.atk || 50,
+        move: sdP.move || sdTable.move || 6,
+        heal: sdP.heal || sdTable.heal || 0,
+        dmgType: sdP.dmgType || sdTable.dmgType || '物理',
+        rangeKey: sdTable.rangeKey || (displayName(cfg.player) + '其余十种影法术召唤出的式神攻击范围')
+      };
+      state.shiki = { kind: eff.key, x: cell.x, y: cell.y, hp: sd.hp, maxHp: sd.hp, heal: sd.heal, rangeKey: sd.rangeKey, atk: sd.atk, move: sd.move, dmgType: sd.dmgType };
+      toast('🦉 召唤式神「' + eff.key + '」：' + sd.hp + ' 血 · ' + sd.move + ' 格移动 · 每轮 ' + sd.atk + ' 点' + sd.dmgType + '伤害'
+        + (sd.heal ? ' · 每轮自愈 ' + sd.heal : ''));
     } else if (eff.type === 'placeCang') {
       var replaced = !!state.cang;
       state.cang = { x: cell.x, y: cell.y };
@@ -1443,7 +1459,12 @@
   }
   function shikiAct() {
     if (!state.shiki || state.gameOver) return;
-    var sd = SHIKIGAMI[state.shiki.kind];
+    var tbl = SHIKIGAMI[state.shiki.kind] || {};
+    var sd = {
+      move: state.shiki.move || tbl.move || 6,
+      atk: state.shiki.atk || tbl.atk || 50,
+      dmgType: state.shiki.dmgType || tbl.dmgType || '物理'
+    };
     for (var i = 0; i < sd.move; i++) {
       if (shikiInRange()) break;
       if (!shikiStep()) break;
@@ -2061,9 +2082,21 @@
       }
     }
     if (state.gameOver) return;
-    // 式神：每轮结束自愈
+    // 式神：每轮结束自愈 + 鄂吐靠近角色时额外为角色回血
     if (state.shiki && state.shiki.heal > 0) {
       state.shiki.hp = Math.min(state.shiki.maxHp, state.shiki.hp + state.shiki.heal);
+    }
+    if (state.shiki && state.shiki.kind === '鄂吐') {
+      var nearP = Math.max(Math.abs(state.shiki.x - state.player.x), Math.abs(state.shiki.y - state.player.y)) <= 3;
+      if (nearP) {
+        var pMaxHp = CHARACTERS[cfg.player].hp || 1;
+        var before = state.player.hp;
+        state.player.hp = Math.min(pMaxHp, state.player.hp + 400);
+        if (state.player.hp > before) {
+          toast('🦉 鄂吐在你身边：每轮结束为你回复 ' + (state.player.hp - before) + ' 点血量');
+          renderStatus();
+        }
+      }
     }
     // 魔虚罗：适应推进 + 每轮回血150 + 3轮时限
     if (state.maha) {
