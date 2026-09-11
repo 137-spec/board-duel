@@ -662,7 +662,11 @@
   }
   var dashCache = {};
   function getDash(key) {
-    if (!(key in dashCache)) dashCache[key] = parseDashGrid(SKILL_RANGES[key]);
+    if (!(key in dashCache)) {
+      var rc = (typeof RANGE_CODE !== 'undefined') ? RANGE_CODE[key] : null;
+      if (rc && rc.path && rc.attack) dashCache[key] = { path: rc.path, attack: rc.attack };
+      else dashCache[key] = parseDashGrid(SKILL_RANGES[key]);
+    }
     return dashCache[key];
   }
   /* 区域膨胀（后撤解范围+3 用）：四邻域扩展 n 次 */
