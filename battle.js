@@ -60,7 +60,8 @@ window.__bootBattle = function (cfgIn) {
   var AI = AI_LEVELS[cfg.difficulty] || AI_LEVELS.simple;
   // 训练营模式：固定 50×50、双方均可操控、AI 可随时开关
   var TRAINING = cfg.mode === 'training';
-  var ONLINE = cfg.mode === 'online';          // 互联网联机
+  var ONLINE = cfg.mode === 'online' || cfg.mode === 'lan'; // 互联网/局域网联机
+  var LAN = cfg.mode === 'lan';
   var GUEST = ONLINE && cfg.role === 'guest';  // 加入方操控敌方单位
 
   /* 领域展开时机判定：要打得中、打得值，不是到点就开
@@ -2609,11 +2610,27 @@ window.__bootBattle = function (cfgIn) {
   }
   NETC.onConnected = function () {
     setStatus('✅ 已连接！');
-    if (NETC.role === 'host') hostConfig();
-    else body.innerHTML = '<p>✅ 已连接！等待房主选择配置并开始对局…</p>';
+    if (NETC.role !== 'host') {
+      body.innerHTML = '<p>✅ 已连接！等待房主开始对局…</p>';
+      return;
+    }
+    // 房主：如果配置已在「开始游戏」里选好，就直接同步发车
+    var saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem('boardBattle') || 'null'); } catch (e) { saved = null; }
+    if (saved && (saved.mode === 'lan' || saved.mode === 'online')) {
+      saved.role = 'host';
+      saved.ai = false;
+      NETC.send({ t: 'config', cfg: saved });
+      lobby.classList.add('hidden');
+      window.__bootBattle(saved);
+      return;
+    }
+    hostConfig();
   };
   NETC.onMessage = function (data) {
     if (data.t === 'config') {
+      data.cfg.role = (NETC.role === 'guest') ? 'guest' : 'host';
+      data.cfg.ai = false;
       lobby.classList.add('hidden');
       window.__bootBattle(data.cfg);
     }

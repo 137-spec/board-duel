@@ -3,7 +3,7 @@
   var PREFIX = '《咒术回战》系列角色：';
   var MAP_OPTIONS = ['32x32', '50x50', '64x64']; // 目前提供三张地图（100x100 也可加入）
 
-  var sel = { map: null, player: null, enemy: null, special: null, assists: [], difficulty: 'simple', enemySpecial: null, enemyAssists: [] };
+  var sel = { mode: null, map: null, player: null, enemy: null, special: null, assists: [], difficulty: 'simple', enemySpecial: null, enemyAssists: [] };
 
   function displayName(key) {
     return key.indexOf(PREFIX) === 0 ? key.slice(PREFIX.length) : key;
@@ -14,14 +14,37 @@
       return c && c.kind !== 'empty';
     });
   }
+  function isNet() { return sel.mode === 'lan' || sel.mode === 'online'; }
 
   var nav = document.getElementById('step-nav');
   function showStep(id, text) {
-    ['step-map', 'step-char', 'step-loadout'].forEach(function (s) {
+    ['step-mode', 'step-map', 'step-char', 'step-loadout'].forEach(function (s) {
       document.getElementById(s).classList.toggle('hidden', s !== id);
     });
     nav.textContent = text;
   }
+
+  /* ---------- 第 0 步：模式 ---------- */
+  var MODES = [
+    { key: 'duel', icon: '⚔️', label: '单人对决', sub: '你 vs AI（四档难度）', desc: '与电脑对战，可选 AI 难度' },
+    { key: 'lan', icon: '📶', label: '局域网联机', sub: '同一 WiFi 双人对战', desc: '两名玩家各操控一方，同一 WiFi 下最稳；选人流程与单人对决相同' },
+    { key: 'online', icon: '🌐', label: '互联网联机', sub: '异地好友点对点直连', desc: '交换连接码即可跨网络对战（无需服务器）' }
+  ];
+  var modeGrid = document.getElementById('mode-grid');
+  MODES.forEach(function (m) {
+    var card = document.createElement('div');
+    card.className = 'option-card';
+    card.innerHTML = '<span class="big">' + m.icon + ' ' + m.label + '</span><span class="sub">' + m.sub + '</span>';
+    card.addEventListener('click', function () {
+      sel.mode = m.key;
+      document.querySelectorAll('#mode-grid .option-card').forEach(function (c) { c.classList.remove('selected'); });
+      card.classList.add('selected');
+      var total = (m.key === 'duel') ? 3 : 3;
+      renderCharacterStep();
+      showStep('step-map', '第 1 步 / 共 ' + total + ' 步：选择地图（' + m.label + '）');
+    });
+    modeGrid.appendChild(card);
+  });
 
   /* ---------- 第 1 步：地图 ---------- */
   var mapGrid = document.getElementById('map-grid');
@@ -74,7 +97,7 @@
   btnToLoadout.addEventListener('click', function () {
     if (!sel.player) return;
     renderLoadoutStep();
-    showStep('step-loadout', '第 3 步 / 共 3 步：选择特技与援助');
+    showStep('step-loadout', (isNet() ? '第 3 步 / 共 3 步：配置角色（联机模式，双方各自操控）' : '第 3 步 / 共 3 步：选择敌我双方的特技与援助'));
   });
 
   /* ---------- 第 3 步：特技与援助 ---------- */
@@ -117,7 +140,10 @@
   }
 
   function renderLoadoutStep() {
-    renderDifficultyChips();
+    var netMode = isNet();
+    var diffWrap = document.getElementById('diff-chips');
+    if (diffWrap) diffWrap.style.display = netMode ? 'none' : '';
+    if (!netMode) renderDifficultyChips();
     // 敌方角色（选 1 个 或 随机）
     enemyChips.innerHTML = '';
     var randChip = document.createElement('span');
@@ -232,6 +258,8 @@
     var ready = readyChars();
     var enemy = sel.enemy || ready[Math.floor(Math.random() * ready.length)];
     var payload = {
+      mode: sel.mode || 'duel',
+      ai: (sel.mode || 'duel') === 'duel',
       map: sel.map,
       player: sel.player,
       enemy: enemy,
@@ -243,6 +271,7 @@
     };
     try {
       sessionStorage.setItem('boardBattle', JSON.stringify(payload));
+      if (payload.mode === 'lan' || payload.mode === 'online') sessionStorage.setItem('onlineRole', 'ask');
     } catch (e) { /* file:// 下个别浏览器限制，忽略 */ }
     window.location.href = 'battle.html';
   });
