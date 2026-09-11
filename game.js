@@ -3,7 +3,7 @@
   var PREFIX = '《咒术回战》系列角色：';
   var MAP_OPTIONS = ['32x32', '50x50', '64x64']; // 目前提供三张地图（100x100 也可加入）
 
-  var sel = { map: null, player: null, enemy: null, special: null, assists: [], difficulty: 'simple' };
+  var sel = { map: null, player: null, enemy: null, special: null, assists: [], difficulty: 'simple', enemySpecial: null, enemyAssists: [] };
 
   function displayName(key) {
     return key.indexOf(PREFIX) === 0 ? key.slice(PREFIX.length) : key;
@@ -82,6 +82,8 @@
   var assistChips = document.getElementById('assist-chips');
   var enemyChips = document.getElementById('enemy-chips');
   var diffChips = document.getElementById('diff-chips');
+  var enemySpecialChips = document.getElementById('enemy-special-chips');
+  var enemyAssistChips = document.getElementById('enemy-assist-chips');
   var summary = document.getElementById('loadout-summary');
   var btnStart = document.getElementById('btn-start');
   var btnBackChar = document.getElementById('btn-back-char');
@@ -171,6 +173,44 @@
       });
       assistChips.appendChild(chip);
     });
+
+    // 敌方特技（选 1）
+    enemySpecialChips.innerHTML = '';
+    if (sKeys.length === 0) enemySpecialChips.innerHTML = '<span class="muted">暂无可选特技</span>';
+    sKeys.forEach(function (key) {
+      var chip = document.createElement('span');
+      var s = SPECIALS[key];
+      chip.className = 'chip' + (sel.enemySpecial === key ? ' selected' : '');
+      chip.textContent = s.name;
+      chip.addEventListener('click', function () {
+        sel.enemySpecial = (sel.enemySpecial === key) ? null : key;
+        renderLoadoutStep();
+      });
+      enemySpecialChips.appendChild(chip);
+    });
+    var enNone = document.createElement('span');
+    enNone.className = 'chip' + (sel.enemySpecial === null ? ' selected' : '');
+    enNone.textContent = '不带特技';
+    enNone.addEventListener('click', function () { sel.enemySpecial = null; renderLoadoutStep(); });
+    enemySpecialChips.insertBefore(enNone, enemySpecialChips.firstChild);
+
+    // 敌方援助（最多 2）
+    enemyAssistChips.innerHTML = '';
+    if (aKeys.length === 0) enemyAssistChips.innerHTML = '<span class="muted">暂无可选援助</span>';
+    aKeys.forEach(function (key) {
+      var chip = document.createElement('span');
+      var a = ASSISTS[key];
+      chip.className = 'chip' + (sel.enemyAssists.indexOf(key) >= 0 ? ' selected' : '');
+      chip.textContent = a.name;
+      chip.addEventListener('click', function () {
+        var i = sel.enemyAssists.indexOf(key);
+        if (i >= 0) sel.enemyAssists.splice(i, 1);
+        else if (sel.enemyAssists.length < 2) sel.enemyAssists.push(key);
+        else { alert('敌方援助最多 2 个'); return; }
+        renderLoadoutStep();
+      });
+      enemyAssistChips.appendChild(chip);
+    });
     renderSummary();
   }
 
@@ -197,6 +237,8 @@
       enemy: enemy,
       special: sel.special,
       assists: sel.assists,
+      enemySpecial: sel.enemySpecial,
+      enemyAssists: sel.enemyAssists,
       difficulty: sel.difficulty || 'simple'
     };
     try {

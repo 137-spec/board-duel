@@ -237,7 +237,10 @@
     gameOver: false,
     spatialWindup: null,            // 空间斩：一轮前摇（回合开始时自动斩击选定的范围）
     enemyAttractNoted: false,
-    enemyShiki: null,               // 敌方式神 {kind,x,y,hp,maxHp,atk,move,rangeKey,dmgType,heal}
+    enemyShiki: null,               // 敌方式神 {kind,x,y,hp,maxHp,atk,move,rangeKey,dmgType,heal,roundsLeft}
+    infSP: false,                   // 训练营：无限技能点（不消耗、保持满值）
+    enemySpecialRound: 0,           // 敌方特技上次使用轮（CD1轮）
+    enemyAssistRound: {},           // 敌方援助上次使用轮（CD7轮）
     enemyCang: null,                // 敌方放置的「苍」{x,y}
     enemySummonRound: 0,            // 敌方上次召唤轮次
     enemySp: 1,                     // 敌方技能点（AI 用技能）
@@ -945,8 +948,8 @@
     // 咒词吟唱：点自己发动（消耗 1 技能点），之后下一个有吟唱形态的技能以吟唱版释放
     if (eff.type === 'chant') {
       if (!hasAnyChantVariant()) { toast('该角色暂无咒词吟唱效果'); state.aiming = null; draw(); return; }
-      if (state.sp < 1) { toast('⚠ 技能点不足（咒词吟唱需要 1 点）'); return; }
-      state.sp -= 1;
+      if (!(TRAINING && state.infSP) && state.sp < 1) { toast('⚠ 技能点不足（咒词吟唱需要 1 点）'); return; }
+      if (!(TRAINING && state.infSP)) state.sp -= 1;
       state.chant = true;
       state.aiming = null;
       state.usedSkill = true;
@@ -1013,11 +1016,11 @@
 
     // 技能点结算（按角色设定；六眼→1）
     var cost = costFor(name);
-    if (state.sp < cost) {
+    if (!(TRAINING && state.infSP) && state.sp < cost) {
       toast('⚠ 技能点不足（「' + name + '」需要 ' + cost + ' 点，当前 ' + state.sp + '）');
       return;
     }
-    state.sp -= cost;
+    if (!(TRAINING && state.infSP)) state.sp -= cost;
 
     state.aiming = null;
     state.usedSkill = true; // 用技能后本轮不可再移动（但可继续放技能）
@@ -1343,14 +1346,14 @@
         if (isSelfSkill(name, detail)) {
           // 自身类也消耗技能点（按设定）
           var scost = costFor(name);
-          if (state.sp < scost) { toast('⚠ 技能点不足（「' + name + '」需要 ' + scost + ' 点）'); return; }
+          if (!(TRAINING && state.infSP) && state.sp < scost) { toast('⚠ 技能点不足（「' + name + '」需要 ' + scost + ' 点）'); return; }
           // 苍（瞬）：传送到苍的位置并使苍消失
           if (name === '苍（瞬）') {
             if (!state.cang) { toast('⚠ 场上没有「苍」，无法瞬移'); return; }
             state.player.x = state.cang.x;
             state.player.y = state.cang.y;
             state.cang = null;
-            state.sp -= scost;
+            if (!(TRAINING && state.infSP)) state.sp -= scost;
             state.usedSkill = true;
             toast('🌀「苍（瞬）」！已传送到苍的位置，苍随之消失' + (scost > 0 ? '，消耗 ' + scost + ' 技能点' : ''));
             draw(); renderStatus();
@@ -1358,7 +1361,7 @@
           }
           // 领域展延：受伤-30%·无视无限·持续至本轮结束·不能使用其余技能
           if (name === '领域展延') {
-            state.sp -= scost;
+            if (!(TRAINING && state.infSP)) state.sp -= scost;
             state.domExtend = true;
             state.usedSkill = true;
             toast('🔰「领域展延」：本轮受到伤害 -30%，无视「无限」效果，期间无法使用其余技能，持续至本轮结束');
@@ -1367,14 +1370,14 @@
           }
           // 无下限术式：获得「无限」状态（2轮）
           if (name === '无下限术式') {
-            state.sp -= scost;
+            if (!(TRAINING && state.infSP)) state.sp -= scost;
             state.infinity = 2;
             state.usedSkill = true;
             toast('🌀「无下限术式」：获得「无限」状态（2轮）——敌方攻击无法命中，敌方无法靠近你一格以内' + (scost > 0 ? '，消耗 ' + scost + ' 技能点' : ''));
             draw(); renderStatus();
             return;
           }
-          state.sp -= scost;
+          if (!(TRAINING && state.infSP)) state.sp -= scost;
           state.usedSkill = true;
           useSelfSkill(name, '消耗 ' + scost + ' 技能点' + (NO_RANGE_SKILLS[name] ? '；目标已确定（如传送至苍的位置）' : ''));
           renderStatus();
@@ -1598,7 +1601,7 @@
       var d = s.detail || '';
       if (/对自身造成/.test(d)) return;            // 自伤类技能不主动用（避免 AI 自杀）
       var cost = enemySkillCost(s);
-      if (cost > state.enemySp) return;
+      if (!(TRAINING && state.infSP) && cost > state.enemySp) return;
       var eff = SKILL_EFFECTS[s.name];
       // 放置/召唤类技能 AI 暂不主动使用（避免误用）；领域类由领域时机逻辑处理
       if (eff && (eff.type === 'placeCang' || eff.type === 'shikigami' || eff.type === 'domain')) return;
@@ -1635,7 +1638,7 @@
     return best;
   }
   function executeEnemySkill(act) {
-    state.enemySp -= act.cost;
+    if (!(TRAINING && state.infSP)) state.enemySp -= act.cost;
     if (act.needOp) state.enemyOp = 0;
     if (act.type === 'self') {
       state.enemyUsed[act.key] = state.round;
@@ -1697,7 +1700,7 @@
       if (short !== '十种影法术') return;
       if (/光环|魔虚罗的光环/.test(s.name)) return;
       var cost = enemySkillCost(s);
-      if (cost > state.enemySp) return;
+      if (!(TRAINING && state.infSP) && cost > state.enemySp) return;
       var eff = SKILL_EFFECTS[s.name];
       var rk = (eff && eff.rangeKey) || (displayName(cfg.enemy) + '十种影法术召唤范围');
       var info = getRange(rk);
@@ -1717,7 +1720,7 @@
       var eff = SKILL_EFFECTS[s.name];
       if (!eff || eff.type !== 'placeCang') return;
       var cost = enemySkillCost(s);
-      if (cost > state.enemySp) return;
+      if (!(TRAINING && state.infSP) && cost > state.enemySp) return;
       var info = getRange(eff.rangeKey);
       if (!info) return;
       found = { name: s.name, cost: cost, cells: info.cells, detail: s.detail || '', rotate: !!eff.rotate };
@@ -1749,7 +1752,7 @@
       if (score < bestD) { bestD = score; target = c; }
     });
     if (!target) return false;
-    state.enemySp -= sk.cost;
+    if (!(TRAINING && state.infSP)) state.enemySp -= sk.cost;
     state.enemyCang = { x: target.x, y: target.y };
     var msg = '🌀 ' + nameShort(cfg.enemy) + ' 使用「' + sk.name + '」在 (' + target.x + ',' + target.y + ') 生成「苍」';
     if (cangArea) {
@@ -1785,7 +1788,7 @@
       if (d < bestD) { bestD = d; best = { x: x, y: y }; }
     });
     if (!best) return false;
-    state.enemySp -= sk.cost;
+    if (!(TRAINING && state.infSP)) state.enemySp -= sk.cost;
     state.enemySummonRound = state.round;
     state.enemyShiki = {
       kind: sk.kind, x: best.x, y: best.y,
@@ -1817,6 +1820,58 @@
     toast('📡 ' + nameShort(cfg.enemy) + ' 收回了式神「' + s.kind + '」（保存实力，之后可再召唤）');
   }
   function SK_PREFIX_ANY() { return displayName(cfg.enemy); }
+  /* 敌方特技（消耗奥义点，CD1轮）：血量偏低时使用 */
+  function enemyTrySpecial() {
+    if (!cfg.enemySpecial) return false;
+    var s = SPECIALS[cfg.enemySpecial];
+    if (!s) return false;
+    if (state.enemySpecialRound > 0 && state.round - state.enemySpecialRound < 2) return false;
+    var eMax = CHARACTERS[cfg.enemy].hp || 1;
+    if (state.enemy.hp / eMax > 0.6) return false;
+    if (state.enemyOp < 1 && !(TRAINING && state.infSP)) return false;
+    if (!(TRAINING && state.infSP)) state.enemyOp -= 1;
+    state.enemySpecialRound = state.round;
+    if (/反转术式/.test(s.name)) {
+      var heal = Math.round(eMax * 0.1);
+      state.enemy.hp = Math.min(eMax, state.enemy.hp + heal);
+      toast('✨ ' + nameShort(cfg.enemy) + ' 使用特技「' + s.name + '」：回复 ' + heal + ' 点血量（消耗 1 奥义点）');
+    } else {
+      toast('✨ ' + nameShort(cfg.enemy) + ' 使用特技「' + s.name + '」（消耗 1 奥义点）');
+    }
+    return true;
+  }
+  /* 敌方援助（不消耗资源，固定CD7轮） */
+  function enemyTryAssist() {
+    var list = cfg.enemyAssists || [];
+    if (!list.length) return false;
+    for (var i = 0; i < list.length; i++) {
+      var key = list[i];
+      var a = ASSISTS[key];
+      if (!a) continue;
+      var last = state.enemyAssistRound[key] || 0;
+      if (last > 0 && state.round - last < 7) continue;
+      if (/魔虚罗/.test(a.name)) {
+        if (state.enemyShiki) continue;
+        if (state.round < 2 && !(TRAINING && state.infSP)) continue;   // 第一轮先观察
+        state.enemyAssistRound[key] = state.round;
+        var st = parseShikiStats('魔虚罗', a.raw || '');
+        var sx = state.enemy.x + 1, sy = state.enemy.y;
+        if (!inBounds(sx, sy) || mapData[sy][sx] !== 0) { sx = state.enemy.x; sy = state.enemy.y; }
+        state.enemyShiki = {
+          kind: '魔虚罗', x: sx, y: sy,
+          hp: 600, maxHp: 600, atk: st.atk || 150, move: st.move || 8, heal: st.heal || 450,
+          dmgType: '正向能量', roundsLeft: 3,
+          rangeKey: displayName(cfg.enemy) + '其余十种影法术召唤出的式神攻击范围'
+        };
+        toast('🛡 ' + nameShort(cfg.enemy) + ' 使用援助「魔虚罗」！（600血 · 存在3轮 · AI操控）');
+        return true;
+      }
+      state.enemyAssistRound[key] = state.round;
+      toast('🛡 ' + nameShort(cfg.enemy) + ' 使用援助「' + a.name + '」');
+      return true;
+    }
+    return false;
+  }
   // 敌方式神行动
   function enemyShikiAct() {
     var s = state.enemyShiki;
@@ -1938,6 +1993,8 @@
     enemyDecideSummonFate();
     enemyShikiAct();
     if (state.gameOver) return;
+    enemyTrySpecial();
+    enemyTryAssist();
     enemyDoSummon();
     enemyDoPlace();
     draw(); renderStatus();
@@ -1954,9 +2011,16 @@
       }
     }
     if (state.gameOver) return;
-    // 敌方式神每轮自愈
+    // 敌方式神每轮自愈 + 援助召唤体的存在时限
     if (state.enemyShiki && state.enemyShiki.heal > 0) {
       state.enemyShiki.hp = Math.min(state.enemyShiki.maxHp, state.enemyShiki.hp + state.enemyShiki.heal);
+    }
+    if (state.enemyShiki && typeof state.enemyShiki.roundsLeft === 'number') {
+      state.enemyShiki.roundsLeft--;
+      if (state.enemyShiki.roundsLeft <= 0) {
+        state.enemyShiki = null;
+        toast('⏳ 敌方援助魔虚罗到了时限（3轮），消失');
+      }
     }
     // 敌方宿傩：按“时机判定”择机展开领域（不再固定轮次秒开）
     if (isSukunaKey(cfg.enemy) && enemyShouldOpenDomain()) {
@@ -2265,6 +2329,7 @@
       state.enemyDomExtend = false;
       document.getElementById('round-info').textContent = '第 ' + state.round + ' 轮';
       draw(); renderStatus(); renderSkills();
+      if (state.infSP) { state.sp = spCapOf(); state.enemySp = spCapForKey(cfg.enemy); state.op = 6; state.enemyOp = 6; }
       toast('⏭ 训练营：第 ' + state.round + ' 轮开始（AI 已关闭，双方都由你操控）');
       return;
     }
@@ -2323,6 +2388,49 @@
   if (diffTag) diffTag.textContent = TRAINING ? '训练营' : ('难度 ' + AI.name);
   var aiBtnInit = document.getElementById('btn-ai-toggle');
   if (aiBtnInit && TRAINING) aiBtnInit.style.display = '';
+  // 训练营便利按钮
+  var TRAIN_IDS = ['btn-reset-hp', 'btn-reset-pos', 'btn-inf-sp'];
+  if (TRAINING) {
+    TRAIN_IDS.forEach(function (id) {
+      var el2 = document.getElementById(id);
+      if (el2) el2.style.display = '';
+    });
+  }
+  var hpBtn = document.getElementById('btn-reset-hp');
+  if (hpBtn) hpBtn.addEventListener('click', function () {
+    var pMax = CHARACTERS[cfg.player].hp || 1, eMax = CHARACTERS[cfg.enemy].hp || 1;
+    state.player.hp = pMax; state.player.shield = 0;
+    state.enemy.hp = eMax; state.enemy.shield = 0;
+    if (state.shiki) { state.shiki.hp = state.shiki.maxHp; }
+    if (state.enemyShiki) { state.enemyShiki.hp = state.enemyShiki.maxHp; }
+    if (state.maha) { state.maha.hp = 600; }
+    draw(); renderStatus();
+    toast('🔄 训练营：双方血量已重置（我方 ' + pMax + ' / 敌方 ' + eMax + '）');
+  });
+  var posBtn = document.getElementById('btn-reset-pos');
+  if (posBtn) posBtn.addEventListener('click', function () {
+    state.player.x = 10; state.player.y = 10;
+    state.enemy.x = W - 11; state.enemy.y = H - 11;
+    state.movedThisRound = 0; state.enemyMoved = 0;
+    centerCam(); draw(); renderStatus();
+    toast('📍 训练营：双方位置已重置到起始格');
+  });
+  var infBtn = document.getElementById('btn-inf-sp');
+  if (infBtn) {
+    infBtn.textContent = '♾ 技能点：' + (state.infSP ? '开' : '关');
+    infBtn.addEventListener('click', function () {
+      state.infSP = !state.infSP;
+      infBtn.textContent = '♾ 技能点：' + (state.infSP ? '开' : '关');
+      if (state.infSP) {
+        state.sp = spCapOf();
+        state.enemySp = spCapForKey(cfg.enemy);
+        state.op = 6;
+        state.enemyOp = 6;
+      }
+      renderStatus(); renderSkills();
+      toast('训练营：无限技能点已' + (state.infSP ? '开启（技能点/奥义点保持满值，不消耗）' : '关闭'));
+    });
+  }
   zoomLabel();
   listClick(document.getElementById('skill-list'));
   renderSkills();
