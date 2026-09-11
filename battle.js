@@ -45,14 +45,33 @@
   function spCapOf() { return spCapForKey(cfg.player); }
   function spRegenOf() { return spRegenForKey(cfg.player); }
 
-  /* ---------- AI 难度（简单=原版，其余逐级增强） ---------- */
+  /* ---------- AI 难度（简单=原版，其余逐级增强） ----------
+     说明：通用技能（普攻/格挡）对多数角色价值有限，AI 不再主动格挡（blockAt=0）
+     领域不再固定轮次秒开，而是按“时机判定”择机展开 */
   var AI_LEVELS = {
-    simple: { name: '简单', useSkills: false, blockAt: 0, kiting: 0, domainRound: 0, sureHit: false, alignBeam: false },
-    normal: { name: '普通', useSkills: true, blockAt: 0.40, kiting: 0, domainRound: 0, sureHit: false, alignBeam: false },
-    hard: { name: '困难', useSkills: true, blockAt: 0.55, kiting: 2, domainRound: 3, sureHit: false, alignBeam: true },
-    brutal: { name: '强化', useSkills: true, blockAt: 0.70, kiting: 2, domainRound: 2, sureHit: true, alignBeam: true }
+    simple: { name: '简单', useSkills: false, blockAt: 0, kiting: 0, useDomain: false, minDomainRound: 0, sureHit: false, alignBeam: false },
+    normal: { name: '普通', useSkills: true, blockAt: 0, kiting: 0, useDomain: false, minDomainRound: 0, sureHit: false, alignBeam: false },
+    hard: { name: '困难', useSkills: true, blockAt: 0, kiting: 2, useDomain: true, minDomainRound: 3, sureHit: false, alignBeam: true },
+    brutal: { name: '强化', useSkills: true, blockAt: 0, kiting: 2, useDomain: true, minDomainRound: 2, sureHit: true, alignBeam: true }
   };
   var AI = AI_LEVELS[cfg.difficulty] || AI_LEVELS.simple;
+
+  /* 领域展开时机判定：要打得中、打得值，不是到点就开
+     条件：玩家在领域范围内（切比雪夫≤6） + 玩家血量还有价值（≥25%）
+           + 已达最早轮次 + （自己血量健康 或 处于劣势需要领域翻盘） */
+  function enemyShouldOpenDomain() {
+    if (!AI.useDomain || state.enemyDomain) return false;
+    if (state.round < AI.minDomainRound) return false;
+    var chebDist = Math.max(Math.abs(state.enemy.x - state.player.x), Math.abs(state.enemy.y - state.player.y));
+    if (chebDist > 6) return false; // 玩家不在领域内 → 开了浪费
+    var pMax = CHARACTERS[cfg.player].hp || 1;
+    var eMax = CHARACTERS[cfg.enemy].hp || 1;
+    var pRatio = state.player.hp / pMax;
+    var eRatio = state.enemy.hp / eMax;
+    if (pRatio < 0.25) return false; // 玩家已是残血 → 不必动用领域
+    if (eRatio >= 0.3) return true;              // 自己状态尚可，正是压制的时机
+    return (pRatio - eRatio) > 0.25;             // 自己吃亏 → 用领域翻盘
+  }
   // 代表字
   var REP_CHARS = { '五条悟': '五', '伏黑惠': '惠', '虎杖悠人': '悠', '宿傩': '傩', '乙骨优太': '乙', '伏黑甚尔': '甚' };
   function repChar(key) {
@@ -1343,10 +1362,11 @@
     mahaAct(); // 玩家召唤的魔虚罗先行（AI操控）
     shikiAct(); // 式神也先行
     if (state.gameOver) return;
-    // 敌方宿傩：按难度在第 N 轮展开领域
-    if (isSukunaKey(cfg.enemy) && !state.enemyDomain && AI.domainRound && state.round >= AI.domainRound) {
+    // 敌方宿傩：按“时机判定”择机展开领域（不再固定轮次秒开）
+    if (isSukunaKey(cfg.enemy) && enemyShouldOpenDomain()) {
       state.enemyDomain = { rounds: 5 };
-      toast('🌐 ' + nameShort(cfg.enemy) + ' 展开领域「伏魔御厨子」！' + (AI.sureHit ? '（领域内攻击必中）' : ''));
+      var reason = (state.enemy.hp / (CHARACTERS[cfg.enemy].hp || 1)) >= 0.3 ? '压制时机成熟' : '劣势翻盘';
+      toast('🌐 ' + nameShort(cfg.enemy) + ' 展开领域「伏魔御厨子」！（' + reason + '）' + (AI.sureHit ? ' 领域内攻击必中' : ''));
       draw(); renderStatus();
     }
     var cap = Math.max(0, moveCapOf(cfg.enemy) - state.enemySlow - (state.domain ? 5 : 0));
