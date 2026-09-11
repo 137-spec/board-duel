@@ -81,9 +81,9 @@ var RANGE_CODE = {};
   // ============================================================
   var SK = '宿傩（十种影法术）';
 
-  // 解 / 解（咒词吟唱）：朝上光束 3宽×8高（可转向）
+  // 解 / 空间斩：朝上光束 3宽×8高（可转向）
   RANGE_CODE[SK + '解（此技能能转向）'] = { cells: beamUp(3, 8) };
-  RANGE_CODE[SK + '解（咒词吟唱）（此技能能转向）'] = { cells: beamUp(3, 8) };
+  RANGE_CODE[SK + '空间斩（此技能能转向）'] = { cells: beamUp(3, 8) };
 
   // 捌：3×3 去本体
   RANGE_CODE[SK + '捌'] = { cells: centeredRect(3, 3) };

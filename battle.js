@@ -99,7 +99,8 @@
     '苍': { type: 'placeCang', rangeKey: rangeKeyFor('苍') },
     // ---- 宿傩 ----
     '解': { type: 'aoe', dmg: 200, rangeKey: skKey('解（此技能能转向）'), rotate: true },
-    '解（咒词吟唱）': { type: 'aoe', dmg: 300, ignoreShield: true, ignoreInfinity: true, rangeKey: skKey('解（咒词吟唱）（此技能能转向）'), rotate: true },
+    // 空间斩：魔虚罗适应「无限」后解锁，需先发动咒词吟唱；一轮前摇，回合开始时自动斩击上回合选定的范围
+    '空间斩': { type: 'spatial', dmg: 300, ignoreShield: true, ignoreInfinity: true, rangeKey: skKey('空间斩（此技能能转向）'), rotate: true, needChant: true },
     '捌': { type: 'aoe', dmg: null, hpPct: 0.10, plus: 200, rangeKey: skKey('捌') },
     '开': { type: 'open', rangeKey: skKey('开（此技能能转向）'), rotate: true, dustKeys: true },
     '蛛网解': { type: 'aoe', dmg: 200, slow: 2, rangeKey: skKey('蛛网解') },
@@ -230,6 +231,7 @@
     assistUsedRound: {},
     turn: 'player',
     gameOver: false,
+    spatialWindup: null,            // 空间斩：一轮前摇（回合开始时自动斩击选定的范围）
     enemyAttractNoted: false,
     enemyShiki: null,               // 敌方式神 {kind,x,y,hp,maxHp,atk,move,rangeKey,dmgType,heal}
     enemyCang: null,                // 敌方放置的「苍」{x,y}
@@ -701,6 +703,7 @@
       if (state.usedSkill) chips.push('🚫 已用技能·不可移动');
       if (state.infinity > 0) chips.push('🌀 无限（剩 ' + state.infinity + ' 轮）·敌方攻击无法命中/无法靠近');
       if (state.chant) chips.push('🕉 咒词吟唱待发（下一个有吟唱形态的技能将以吟唱版释放）');
+      if (state.spatialWindup) chips.push('🌀 空间斩前摇中（回合开始自动斩击选定范围）');
       if (state.domExtend) chips.push('🔰 领域展延·受伤-30%·无法使用其余技能');
       if (state.domain) chips.push('🌐 领域展开中（剩 ' + state.domain.rounds + ' 轮）·每轮+20%粉尘');
       if (state.enemyDomain) chips.push('🌐 敌方领域展开中（剩 ' + state.enemyDomain.rounds + ' 轮）');
@@ -869,6 +872,16 @@
     var c = CHARACTERS[cfg.player];
     if (!c || !c.skills) return false;
     return c.skills.some(function (s) { return /（咒词吟唱）$/.test(s.name); });
+  }
+  // 空间斩解锁条件：魔虚罗（援助召唤体/式神）已适应「无限」类技能
+  function hasUnlockedSpatial() {
+    function adaptedBy(m) {
+      if (!m || !m.adapts) return false;
+      return Object.keys(m.adapts).some(function (k) {
+        return m.adapts[k] && m.adapts[k].done && /无限|无下限/.test(k);
+      });
+    }
+    return adaptedBy(state.maha) || adaptedBy(state.shiki);
   }
 
   function startAiming(name) {
@@ -1095,6 +1108,11 @@
         toast('💫「' + name + '」' + moveWord + '到 (' + px + ',' + py + ')，朝' + dD.label + '打出的「解」未命中');
       }
       checkEnd();
+    } else if (eff.type === 'spatial') {
+      // 空间斩：需先发动咒词吟唱；一轮前摇，回合开始时自动对上回合选定的范围释放
+      state.chant = false;
+      state.spatialWindup = { cells: aim.cells, dmg: eff.dmg };
+      toast('🌀「空间斩」蓄力完成前摇中…回合开始时自动斩击选定的范围（无视无限与护盾）');
     } else if (eff.type === 'domain') {
       // 领域展开（大招）
       state.domain = { rounds: 5, cells: aim.cells };
@@ -1168,7 +1186,9 @@
         var hasRange = eff && eff.rangeKey && getRange(eff.rangeKey);
         var self = isSelfSkill(sk.name, sk.detail);
         var badge;
-        if (hasRange) badge = eff.needOp ? '大招·需奥义点' : '可释放';
+        if (sk.name === '空间斩') {
+          badge = !hasUnlockedSpatial() ? '未解锁（需魔虚罗适应「无限」）' : (state.chant ? '吟唱已就绪' : '需先发动咒词吟唱');
+        } else if (hasRange) badge = eff.needOp ? '大招·需奥义点' : '可释放';
         else if (self) badge = '无范围';
         else badge = '范围待定';
         html += '<button class="skill-btn" data-skill="char" data-name="' + sk.name.replace(/"/g, '&quot;') + '">' +
@@ -1276,6 +1296,11 @@
         }
         var eff = SKILL_EFFECTS[name];
         var hasRange = eff && eff.rangeKey && getRange(eff.rangeKey);
+        // 空间斩：需先解锁（魔虚罗适应「无限」）+ 已发动咒词吟唱
+        if (name === '空间斩') {
+          if (!hasUnlockedSpatial()) { toast('⚠ 「空间斩」未解锁：需要你的魔虚罗先适应敌方的「无限」'); return; }
+          if (!state.chant) { toast('⚠ 「空间斩」需要先发动咒词吟唱（技能列表最上方）'); return; }
+        }
         if (hasRange) { startAiming(name); return; }
         if (isSelfSkill(name, detail)) {
           // 自身类也消耗技能点（按设定）
@@ -1972,6 +1997,20 @@
         toast('🌀「苍」每轮结束效果：' + nameShort(cfg.enemy) + ' 受到 ' + d + ' 点伤害');
         checkEnd();
       }
+    }
+    if (state.gameOver) return;
+    // 空间斩：回合开始自动斩击上回合选定的范围
+    if (state.spatialWindup) {
+      var inSpat = state.spatialWindup.cells.some(function (c) { return c.x === state.enemy.x && c.y === state.enemy.y; });
+      if (inSpat) {
+        var dSp = applyDamageBypass(state.enemy, state.spatialWindup.dmg);
+        earnOp();
+        toast('🌀「空间斩」自动斩击！' + nameShort(cfg.enemy) + ' 受到 ' + dSp + ' 点伤害（无视无限与护盾）');
+        checkEnd();
+      } else {
+        toast('🌀「空间斩」斩空（敌人已离开选定范围）');
+      }
+      state.spatialWindup = null;
     }
     if (state.gameOver) return;
     // 「开」蓄力完成：本轮结束时释放（若敌方仍在打击区内）
