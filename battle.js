@@ -232,6 +232,10 @@
     gameOver: false,
     enemyAttractNoted: false,
     enemySp: 1,                     // 敌方技能点（AI 用技能）
+    enemyOp: 2,                     // 敌方奥义点（开局2，命中+1，大招消耗）
+    enemyUsed: {},                  // 敌方自身增益技能使用记录
+    enemyInfinity: 0,               // 敌方「无限」剩余轮数（我方攻击无法命中）
+    enemyDomExtend: false,          // 敌方「领域展延」（受伤-30%）
     enemyBlockedRound: false,       // 敌方本轮是否已格挡
     maha: null,                     // 场上魔虚罗（援助召唤）
     aiming: null,                   // {name, cells:[{x,y}]}
@@ -331,6 +335,20 @@
     var d = Math.round(amount);
     u.hp = Math.max(0, u.hp - d); // 无视护盾（如解·咒词吟唱）
     return d;
+  }
+  /* 我方对敌方造成伤害的统一入口：处理敌方「无限」与「领域展延」 */
+  function damageEnemy(amount, ignoreInfinity) {
+    if (state.enemyInfinity > 0 && !ignoreInfinity) {
+      toast('🌀 敌方的「无限」使你的攻击无法命中！');
+      return 0;
+    }
+    var amt = Math.round(amount);
+    if (state.enemyDomExtend) {
+      var reduced = Math.round(amt * 0.7);
+      toast('🔰 敌方「领域展延」减伤30%：' + amt + ' → ' + reduced);
+      amt = reduced;
+    }
+    return applyDamage(state.enemy, amt);
   }
   function checkEnd() {
     if (state.gameOver) return;
@@ -796,7 +814,8 @@
 
     if (eff.type === 'attack') {
       if (eff.needOp) state.op = 0; // 大招消耗全部奥义点
-      var dmg = applyDamage(state.enemy, eff.dmg);
+      var dmg = damageEnemy(eff.dmg, false);
+      if (dmg === 0) { draw(); renderStatus(); return; }
       earnOp();
       toast('⚔️「' + name + '」命中！对 ' + nameShort(cfg.enemy) + ' 造成 ' + dmg + ' 点伤害（' + (state.sp > 0 ? '消耗 ' + cost + ' 技能点' : '未消耗技能点') + '）');
       checkEnd();
@@ -815,7 +834,16 @@
         ? Math.round((CHARACTERS[cfg.enemy].hp || 1) * eff.hpPct) + (eff.plus || 0)
         : eff.dmg;
       if (inside) {
-        var d = eff.ignoreShield ? applyDamageBypass(state.enemy, base) : applyDamage(state.enemy, base);
+        var d;
+        if (state.enemyInfinity > 0 && !eff.ignoreInfinity) {
+          toast('🌀 敌方的「无限」使你的攻击无法命中！');
+          d = 0;
+        } else if (eff.ignoreShield) {
+          d = applyDamageBypass(state.enemy, base);
+        } else {
+          d = damageEnemy(base, eff.ignoreInfinity);
+        }
+        if (d === 0 && state.enemyInfinity > 0 && !eff.ignoreInfinity) { draw(); renderStatus(); return; }
         earnOp();
         toast('⚔️「' + name + '」命中！对 ' + nameShort(cfg.enemy) + ' 造成 ' + d + ' 点伤害（消耗 ' + cost + ' 技能点）');
       } else {
@@ -855,7 +883,8 @@
       var hit2 = state.sureHit || cells2.some(function (c) { return c.x === state.enemy.x && c.y === state.enemy.y; });
       var moveWord = eff.out ? '后撤' : '冲刺';
       if (hit2) {
-        var d4 = applyDamage(state.enemy, eff.dmg);
+        var d4 = damageEnemy(eff.dmg, false);
+        if (d4 === 0) { draw(); renderStatus(); return; }
         earnOp();
         toast('💫「' + name + '」' + moveWord + '到 (' + px + ',' + py + ')，朝' + dD.label + '打出「解」！' + nameShort(cfg.enemy) + ' 受到 ' + d4 + ' 点伤害');
       } else {
@@ -1244,12 +1273,119 @@
     }
     return moved;
   }
-  /* 敌方玩家攻击结算（随 AI 难度增强：格挡 / 解 / 咒词解 / 捌 / 领域必中） */
+  /* ============================================================
+     通用 AI（所有角色共用）：从角色数据读取技能 → 解析消耗/范围/伤害
+     → 自动选择能打到玩家的最优技能；自身增益类技能按需开启
+     特殊角色（例如带领域的）以后再单独补充规则
+     ============================================================ */
+  function parseSkillDamage(detail, name) {
+    var d = detail || '';
+    // 血量上限百分比型（如 捌：敌人血量上限10％＋10×手指数的伤害）
+    var pm = /血量上限\s*(\d+)\s*[％%]/.exec(d);
+    if (pm) {
+      var base = Math.round((CHARACTERS[cfg.player].hp || 1) * parseInt(pm[1], 10) / 100);
+      var addM = /＋\s*(\d+)/.exec(d);
+      return base + (addM ? parseInt(addM[1], 10) : 0);
+    }
+    // “手指”公式：按 20 根手指估算（宿傩默认 20 指）
+    var fm = /(\d+)\s*×\s*手指数/.exec(d);
+    if (fm) return parseInt(fm[1], 10) * 20;
+    // 普通固定伤害
+    var m = /造成\s*(\d+)\s*点伤害/.exec(d);
+    if (m) return parseInt(m[1], 10);
+    if (/近战伤害/.test(d) || name === '普攻') return 25;
+    return 0;
+  }
+  function enemySkillCost(skill) {
+    var c = spCostOf(skill.detail || '');
+    if (c > 0 && hasSixEyes(cfg.enemy)) c = 1; // 六眼：消耗变为1
+    return c;
+  }
+  // 生成候选行动（可打到玩家的技能 / 自身增益）
+  function pickEnemySkill() {
+    var c = CHARACTERS[cfg.enemy];
+    var best = null;
+    var sureHit = AI.sureHit && state.enemyDomain;
+    (c.skills || []).forEach(function (s) {
+      var short = s.name.replace(/[（(].*$/, '');
+      if (short === '普攻' || short === '格挡') return;
+      var d = s.detail || '';
+      if (/对自身造成/.test(d)) return;            // 自伤类技能不主动用（避免 AI 自杀）
+      var cost = enemySkillCost(s);
+      if (cost > state.enemySp) return;
+      var eff = SKILL_EFFECTS[s.name];
+      // 放置/召唤类技能 AI 暂不主动使用（避免误用）；领域类由领域时机逻辑处理
+      if (eff && (eff.type === 'placeCang' || eff.type === 'shikigami' || eff.type === 'domain')) return;
+      var selfOnly = isSelfSkill(s.name, d) && !(eff && eff.rangeKey);
+      if (selfOnly) {
+        var key = 'self:' + s.name;
+        if (state.enemyUsed[key] && state.round - state.enemyUsed[key] < 2) return; // 每2轮最多一次
+        if (!best) best = { type: 'self', name: s.name, cost: cost, dmg: 0, key: key, detail: d };
+        return;
+      }
+      var rk = (eff && eff.rangeKey) || (displayName(cfg.enemy) + s.name);
+      var info = getRange(rk);
+      if (!info) return;                            // 没有范围数据 → 不乱放
+      var needOp = eff && eff.needOp;
+      if (needOp && state.enemyOp < needOp) return;  // 大招需奥义点
+      for (var r = 0; r < 4; r++) {
+        var cells = [];
+        info.cells.forEach(function (o) {
+          var dx = o[0], dy = o[1];
+          for (var k = 0; k < r; k++) { var t = dx; dx = -dy; dy = t; }
+          var x = state.enemy.x + dx, y = state.enemy.y + dy;
+          if (inBounds(x, y)) cells.push({ x: x, y: y });
+        });
+        var hit = cells.some(function (p) { return p.x === state.player.x && p.y === state.player.y; });
+        if (hit || sureHit) {
+          var dmg = parseSkillDamage(d, s.name);
+          if (!best || dmg > best.dmg) {
+            best = { type: 'skill', name: s.name, cost: cost, dmg: dmg, rot: r, cells: cells, detail: d, needOp: needOp || 0 };
+          }
+          break;
+        }
+      }
+    });
+    return best;
+  }
+  function executeEnemySkill(act) {
+    state.enemySp -= act.cost;
+    if (act.needOp) state.enemyOp = 0;
+    if (act.type === 'self') {
+      state.enemyUsed[act.key] = state.round;
+      if (/无下限术式/.test(act.name) && !/瞬/.test(act.name)) {
+        state.enemyInfinity = 2;
+        toast('🌀 ' + nameShort(cfg.enemy) + ' 使用「' + act.name + '」：获得「无限」（你 2 轮内的攻击将无法命中）');
+      } else if (/领域展延/.test(act.name)) {
+        state.enemyDomExtend = true;
+        toast('🔰 ' + nameShort(cfg.enemy) + ' 使用「领域展延」：本轮受到伤害 -30%');
+      } else {
+        toast('✨ ' + nameShort(cfg.enemy) + ' 使用「' + act.name + '」（自身增益，消耗 ' + act.cost + ' 技能点）');
+      }
+      return;
+    }
+    var bypassInfinity = /无视“无限”|无视"无限"|无视无限/.test(act.detail || '');
+    var ignoreShield = /无视护盾/.test(act.detail || '') || /咒词/.test(act.name);
+    if (state.infinity > 0 && !bypassInfinity && !(AI.sureHit && state.enemyDomain)) {
+      toast('🛡「无限」使 ' + nameShort(cfg.enemy) + ' 的「' + act.name + '」无法命中！');
+      return;
+    }
+    if (act.dmg <= 0) {
+      toast('⚔️ ' + nameShort(cfg.enemy) + ' 使用「' + act.name + '」');
+      return;
+    }
+    var d;
+    if (ignoreShield) d = applyDamageBypass(state.player, act.dmg);
+    else d = applyDamage(state.player, act.dmg);
+    state.enemyOp = Math.min(6, state.enemyOp + 1); // 命中获得奥义点
+    toast('⚔️ ' + nameShort(cfg.enemy) + ' 使用「' + act.name + '」：造成 ' + d + ' 点伤害'
+      + (ignoreShield ? '（无视护盾/无限）' : '') + '（消耗 ' + act.cost + ' 技能点）');
+  }
+  /* 敌方玩家攻击结算：通用技能优先级 → 普攻保底 */
   function enemyAttackPlayer() {
     var e = state.enemy;
     var eMax = CHARACTERS[cfg.enemy].hp || 1;
     var hpRatio = e.hp / eMax;
-    var aligned = (e.x === state.player.x || e.y === state.player.y);
     var dist = Math.abs(e.x - state.player.x) + Math.abs(e.y - state.player.y);
     var sureHit = AI.sureHit && state.enemyDomain; // 强化：领域内必中
 
@@ -1261,53 +1397,15 @@
       return;
     }
 
-    // 1) 低血量格挡
-    if (AI.blockAt && hpRatio < AI.blockAt && !state.enemyBlockedRound) {
-      state.enemyBlockedRound = true;
-      e.shield = (e.shield || 0) + 25;
-      toast('🛡 ' + nameShort(cfg.enemy) + ' 使用「格挡」：获得 25 点护盾（血量 ' + e.hp + '/' + eMax + '）');
-      return;
+    // 1) 通用技能（按角色数据自动选择）
+    if (AI.useSkills) {
+      var act = pickEnemySkill();
+      if (act) { executeEnemySkill(act); return; }
     }
 
-    // 2) 技能（宿傩系）：解 / 咒词吟唱解 / 捌
-    if (AI.useSkills && isSukunaKey(cfg.enemy)) {
-      // 咒词吟唱「解」：无视无限与护盾（对高威胁 / 有护盾 / 有无限时使用）
-      if (state.enemySp >= 2 && aligned && dist <= 8 &&
-        (sureHit || state.infinity > 0 || (state.player.shield || 0) > 0 || state.player.hp <= 350)) {
-        state.enemySp -= 2;
-        var dC = applyDamageBypass(state.player, 300);
-        toast('⚔️ ' + nameShort(cfg.enemy) + ' 使用「解（咒词吟唱）」：无视护盾与无限，造成 ' + dC + ' 点伤害');
-        return;
-      }
-      // 捌：贴身时打最大血量百分比伤害
-      if (state.enemySp >= 1 && Math.abs(e.x - state.player.x) <= 1 && Math.abs(e.y - state.player.y) <= 1) {
-        state.enemySp -= 1;
-        var d8 = Math.round((CHARACTERS[cfg.player].hp || 1) * 0.10) + 200;
-        if (sureHit || state.infinity <= 0) {
-          var d8r = applyDamage(state.player, d8);
-          toast('⚔️ ' + nameShort(cfg.enemy) + ' 使用「捌」：造成 ' + d8r + ' 点伤害（最大血量10%+200）');
-        } else {
-          toast('🛡「无限」使 ' + nameShort(cfg.enemy) + ' 的「捌」无法命中！');
-        }
-        return;
-      }
-      // 解：同轴光束（困难/强化会主动对齐）
-      if (state.enemySp >= 1 && (aligned || sureHit) && (dist <= 8 || sureHit)) {
-        state.enemySp -= 1;
-        if (sureHit || state.infinity <= 0) {
-          var dJ = applyDamage(state.player, 200);
-          toast('⚔️ ' + nameShort(cfg.enemy) + ' 使用「解」：造成 ' + dJ + ' 点伤害');
-        } else {
-          toast('🛡「无限」使 ' + nameShort(cfg.enemy) + ' 的「解」无法命中！');
-        }
-        return;
-      }
-    }
-
-    // 3) 普攻（保底）
+    // 2) 普攻（保底）
     if (sureHit || state.infinity <= 0) {
       var baseDmg = 25;
-      // 双面四臂：普攻伤害 +25（宿傩被动之一，若数据里有该被动则生效）
       var passives = (CHARACTERS[cfg.enemy].passives || []).join('');
       if (/双面四臂/.test(passives)) baseDmg += 25;
       if (state.domExtend) {
@@ -1316,6 +1414,7 @@
         toast('🔰 领域展延减伤30%：' + nameShort(cfg.enemy) + ' 对你造成 ' + reduced + ' 点伤害');
       } else {
         var dmg = applyDamage(state.player, baseDmg);
+        state.enemyOp = Math.min(6, state.enemyOp + 1);
         toast('⚔️ ' + nameShort(cfg.enemy) + ' 对你普攻：造成 ' + dmg + ' 点伤害');
       }
     } else {
@@ -1429,8 +1528,8 @@
     if (state.openWindup) {
       var hitOpen = state.sureHit || state.openWindup.cells.some(function (c) { return c.x === state.enemy.x && c.y === state.enemy.y; });
       if (hitOpen) {
-        var dOpen = applyDamage(state.enemy, state.openWindup.dmg);
-        earnOp();
+        var dOpen = damageEnemy(state.openWindup.dmg, false);
+        if (dOpen > 0) earnOp();
         toast('🌋「开」蓄力完成！轰击（粉尘 ' + state.openWindup.tier + '）：' + nameShort(cfg.enemy) + ' 受到 ' + dOpen + ' 点伤害');
         checkEnd();
       } else {
@@ -1501,9 +1600,12 @@
     state.usedSkill = false;
     state.enemyAttractNoted = false;
     state.enemySlow = 0; // 敌方减速每轮重置（蛛网解/领域）
-    // 敌方技能点回复（诅咒之王：上限6、每轮+2）
+    // 敌方技能点/奥义点回复（诅咒之王：技能点上限6、每轮+2）
     state.enemySp = Math.min(spCapForKey(cfg.enemy), state.enemySp + spRegenForKey(cfg.enemy));
+    state.enemyOp = Math.min(6, state.enemyOp + 1);
     state.enemyBlockedRound = false;
+    if (state.enemyInfinity > 0) state.enemyInfinity--;
+    state.enemyDomExtend = false;
     if (state.infinity > 0) {
       state.infinity--;
       if (state.infinity <= 0) toast('⌛「无限」状态消失');
