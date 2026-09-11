@@ -1,7 +1,8 @@
 // 战斗界面：地图棋盘 + 左侧状态/移动 + 右侧技能
 // 范围规范：本格含范围→2=本体 3=范围；本格不含→1=本体 2=范围
 // 苍特殊：1=攻击范围 2=吸附范围；1与中心0也为吸附范围，中心0也是攻击范围
-(function () {
+// 启动方式：window.__bootBattle(cfg)；联机模式由大厅握手后调用
+window.__bootBattle = function (cfgIn) {
   var PREFIX = '《咒术回战》系列角色：';
 
   function displayName(key) {
@@ -15,8 +16,10 @@
   }
 
   /* ---------- 读取出战配置（无配置时用默认演示数据） ---------- */
-  var cfg = null;
-  try { cfg = JSON.parse(sessionStorage.getItem('boardBattle') || 'null'); } catch (e) { cfg = null; }
+  var cfg = cfgIn || null;
+  if (!cfg) {
+    try { cfg = JSON.parse(sessionStorage.getItem('boardBattle') || 'null'); } catch (e) { cfg = null; }
+  }
   if (!cfg) {
     var chars = readyChars();
     var specials = Object.keys(SPECIALS).filter(function (k) { return SPECIALS[k] && SPECIALS[k].kind !== 'empty'; });
@@ -57,6 +60,8 @@
   var AI = AI_LEVELS[cfg.difficulty] || AI_LEVELS.simple;
   // 训练营模式：固定 50×50、双方均可操控、AI 可随时开关
   var TRAINING = cfg.mode === 'training';
+  var ONLINE = cfg.mode === 'online';          // 互联网联机
+  var GUEST = ONLINE && cfg.role === 'guest';  // 加入方操控敌方单位
 
   /* 领域展开时机判定：要打得中、打得值，不是到点就开
      条件：玩家在领域范围内（切比雪夫≤6） + 玩家血量还有价值（≥25%）
@@ -275,6 +280,7 @@
   /* ---------- 工具 ---------- */
   var toastTimer = null;
   function toast(msg) {
+    if (typeof netBroadcast === 'function') { try { netBroadcast(msg); } catch (e) {} }
     var t = document.getElementById('toast');
     t.textContent = msg;
     t.classList.add('show');
@@ -761,7 +767,7 @@
   function movePlayer(dx, dy) {
     if (state.gameOver) return;
     // 训练营：移动“当前选中的单位”（我方或敌方都能操控）
-    var unit = (TRAINING && state.selected === 'enemy') ? state.enemy : state.player;
+    var unit = ((TRAINING && state.selected === 'enemy') || GUEST) ? state.enemy : state.player;
     var isMySide = (unit === state.player);
     if (!TRAINING && state.turn !== 'player') return;
     if (TRAINING && state.turn === 'enemy' && state.aiOn) { toast('🤖 敌方 AI 行动中，请稍候（或关闭 AI 开关）'); return; }
@@ -1190,14 +1196,14 @@
     html += '<button class="skill-btn" data-skill="普攻">⚔️ 普攻<span class="cd">' + (atkUsed ? '本轮已用' : '可释放 · 25伤害') + '</span></button>';
     html += '<button class="skill-btn" data-skill="格挡">🛡 格挡<span class="cd">' + (blkUsed ? '本轮已用' : '可释放 · 25护盾') + '</span></button>';
 
-    if (cfg.special && !(TRAINING && state.selected === 'enemy')) {
+    if (cfg.special && !((TRAINING && state.selected === 'enemy') || GUEST)) {
       var s = SPECIALS[cfg.special];
       var cooling = state.specialUsedRound > 0 && state.round - state.specialUsedRound < 2;
       html += '<div class="skill-group-title">特技（需要奥义点）</div>';
       html += '<button class="skill-btn" data-skill="特技">✨ ' + (s ? s.name : cfg.special) +
         '<span class="cd' + (cooling ? ' cooling' : '') + '">' + (cooling ? '冷却中' : '可用 · CD1轮') + '</span></button>';
     }
-    if (cfg.assists && cfg.assists.length && !(TRAINING && state.selected === 'enemy')) {
+    if (cfg.assists && cfg.assists.length && !((TRAINING && state.selected === 'enemy') || GUEST)) {
       html += '<div class="skill-group-title">援助（不消耗奥义点）</div>';
       cfg.assists.forEach(function (k) {
         var a = ASSISTS[k];
@@ -1207,7 +1213,7 @@
           '<span class="cd' + (remain > 0 ? ' cooling' : '') + '">' + (remain > 0 ? '冷却中剩' + remain + '轮' : '可用 · CD7轮') + '</span></button>';
       });
     }
-    var controlFoe = TRAINING && state.selected === 'enemy';
+    var controlFoe = (TRAINING && state.selected === 'enemy') || GUEST;
     var own = charSkillList(controlFoe ? cfg.enemy : cfg.player);
     if (controlFoe) {
       html += '<div class="skill-group-title" style="color:#ffb3b3;">操控中：' + nameShort(cfg.enemy) + '（训练营·技能点 ' + state.enemySp + '）</div>';
@@ -1323,7 +1329,7 @@
       if (kind === 'char') {
         var name = btn.getAttribute('data-name');
         // 训练营：操控敌方释放技能（自动瞄准我方）
-        if (TRAINING && state.selected === 'enemy') {
+        if ((TRAINING && state.selected === 'enemy') || GUEST) {
           var forced = pickEnemySkill(name);
           if (!forced) { toast('「' + name + '」当前无法释放（技能点不足 / 打不到目标 / 无范围数据）'); return; }
           executeEnemySkill(forced);
@@ -2437,5 +2443,179 @@
   renderDir();
   renderStatus();
   resize();
+  if (GUEST) selectUnit('enemy');
   toast('第 1 轮开始！（AI 难度：' + AI.name + '）➕➖ 或滚轮/双指可缩放地图');
+
+  /* ---------- 联机同步（回合制快照同步） ---------- */
+  function netSnap() {
+    return {
+      r: state.round, d: state.dust,
+      p: [state.player.x, state.player.y, state.player.hp, state.player.shield],
+      e: [state.enemy.x, state.enemy.y, state.enemy.hp, state.enemy.shield],
+      sp: state.sp, esp: state.enemySp, op: state.op, eop: state.enemyOp,
+      mv: state.movedThisRound, emv: state.enemyMoved,
+      inf: state.infinity, einf: state.enemyInfinity,
+      de: state.domExtend ? 1 : 0, ede: state.enemyDomExtend ? 1 : 0,
+      br: state.breakRounds, ch: state.chant ? 1 : 0,
+      cg: state.cang, ecg: state.enemyCang,
+      dom: state.domain ? state.domain.rounds : 0,
+      edom: state.enemyDomain ? state.enemyDomain.rounds : 0,
+      mh: state.maha ? [state.maha.x, state.maha.y, state.maha.hp, state.maha.roundsLeft] : null,
+      sh: state.shiki ? [state.shiki.x, state.shiki.y, state.shiki.hp] : null,
+      esh: state.enemyShiki ? [state.enemyShiki.x, state.enemyShiki.y, state.enemyShiki.hp] : null,
+      uni: state.uni, usk: state.usedSkill ? 1 : 0, turn: state.turn
+    };
+  }
+  function netApply(s) {
+    if (!s) return;
+    state.round = s.r;
+    var ri = document.getElementById('round-info');
+    if (ri) ri.textContent = '第 ' + state.round + ' 轮';
+    state.dust = s.d;
+    state.player.x = s.p[0]; state.player.y = s.p[1]; state.player.hp = s.p[2]; state.player.shield = s.p[3];
+    state.enemy.x = s.e[0]; state.enemy.y = s.e[1]; state.enemy.hp = s.e[2]; state.enemy.shield = s.e[3];
+    state.sp = s.sp; state.enemySp = s.esp; state.op = s.op; state.enemyOp = s.eop;
+    state.movedThisRound = s.mv; state.enemyMoved = s.emv;
+    state.infinity = s.inf; state.enemyInfinity = s.einf;
+    state.domExtend = !!s.de; state.enemyDomExtend = !!s.ede;
+    state.breakRounds = s.br; state.chant = !!s.ch;
+    state.cang = s.cg || null; state.enemyCang = s.ecg || null;
+    if (s.dom) { state.domain = state.domain || { cells: [] }; state.domain.rounds = s.dom; } else state.domain = null;
+    state.enemyDomain = s.edom ? { rounds: s.edom } : null;
+    if (s.mh) {
+      if (!state.maha) state.maha = { adapts: {}, roundsLeft: s.mh[3] };
+      state.maha.x = s.mh[0]; state.maha.y = s.mh[1]; state.maha.hp = s.mh[2]; state.maha.roundsLeft = s.mh[3];
+    } else state.maha = null;
+    if (s.sh) {
+      if (!state.shiki) state.shiki = { kind: '式神', maxHp: 200, rangeKey: '', atk: 0, move: 0, heal: 0 };
+      state.shiki.x = s.sh[0]; state.shiki.y = s.sh[1]; state.shiki.hp = s.sh[2];
+    } else state.shiki = null;
+    if (s.esh) {
+      if (!state.enemyShiki) state.enemyShiki = { kind: '式神', maxHp: 200, atk: 0, move: 0, heal: 0, rangeKey: '' };
+      state.enemyShiki.x = s.esh[0]; state.enemyShiki.y = s.esh[1]; state.enemyShiki.hp = s.esh[2];
+    } else state.enemyShiki = null;
+    if (s.uni) state.uni = s.uni;
+    state.usedSkill = !!s.usk;
+    state.turn = s.turn || 'player';
+    checkEnd();
+  }
+  var netTimer = null;
+  function netBroadcast(logMsg) {
+    if (cfg.mode !== 'online' || !window.DSH_NET || !window.DSH_NET.connected) return;
+    clearTimeout(netTimer);
+    netTimer = setTimeout(function () {
+      window.DSH_NET.send({ t: 'state', s: netSnap(), log: logMsg || '' });
+    }, 80);
+  }
+  if (cfg.mode === 'online' && window.DSH_NET) {
+    window.DSH_NET.onMessage = function (data) {
+      if (data.t === 'state') {
+        netApply(data.s);
+        draw(); renderStatus(); renderSkills();
+        if (data.log) toast('对方行动：' + data.log);
+      }
+    };
+    toast('🌐 联机对战中：双方各自操控自己的角色');
+  }
+  window.__netBroadcast = netBroadcast;
+};
+
+/* ============================================================
+   启动：联机模式先走大厅握手，其它模式直接开局
+   ============================================================ */
+(function () {
+  var role = null;
+  try { role = sessionStorage.getItem('onlineRole'); } catch (e) {}
+  var lobby = document.getElementById('net-lobby');
+  var NETC = window.DSH_NET;
+  if (!role || !NETC || !lobby) {
+    window.__bootBattle(null);
+    return;
+  }
+  lobby.classList.remove('hidden');
+  var body = document.getElementById('nl-body');
+  var statusEl = document.getElementById('nl-status');
+  function setStatus(t, ok) {
+    statusEl.textContent = t;
+    statusEl.style.color = (ok === false) ? '#ffb3b3' : '#a7e98c';
+  }
+  document.getElementById('nl-host').addEventListener('click', function () {
+    setStatus('正在生成邀请码…');
+    NETC.hostOffer().then(function (code) {
+      body.innerHTML =
+        '<p><b>第 1 步：</b>把下面的<b>邀请码</b>发给对方（微信/QQ 等均可）：</p>' +
+        '<textarea id="nl-offer" readonly style="width:100%;height:70px;font-size:.72rem;"></textarea>' +
+        '<p style="margin-top:8px;"><b>第 2 步：</b>收到对方的<b>应答码</b>后粘贴到这里：</p>' +
+        '<textarea id="nl-answer" style="width:100%;height:70px;font-size:.72rem;" placeholder="粘贴应答码"></textarea>' +
+        '<button class="menu-btn small" id="nl-accept" style="margin-top:8px;">完成连接</button>';
+      document.getElementById('nl-offer').value = code;
+      document.getElementById('nl-accept').addEventListener('click', function () {
+        var ans = document.getElementById('nl-answer').value;
+        if (!ans) { setStatus('请先粘贴应答码', false); return; }
+        NETC.hostAccept(ans).then(function () { setStatus('已提交，等待连接…'); })
+          .catch(function (e) { setStatus('应答码无效：' + e.message, false); });
+      });
+    }).catch(function (e) { setStatus('生成失败：' + e.message + '（浏览器需支持 WebRTC）', false); });
+  });
+  document.getElementById('nl-guest').addEventListener('click', function () {
+    body.innerHTML =
+      '<p><b>第 1 步：</b>把房主发来的<b>邀请码</b>粘贴到这里：</p>' +
+      '<textarea id="nl-offer-in" style="width:100%;height:70px;font-size:.72rem;" placeholder="粘贴邀请码"></textarea>' +
+      '<button class="menu-btn small" id="nl-gen-answer" style="margin-top:8px;">生成应答码</button>' +
+      '<div id="nl-answer-box"></div>';
+    document.getElementById('nl-gen-answer').addEventListener('click', function () {
+      var code = document.getElementById('nl-offer-in').value;
+      if (!code) { setStatus('请先粘贴邀请码', false); return; }
+      setStatus('正在生成应答码…');
+      NETC.guestAnswer(code).then(function (ans) {
+        document.getElementById('nl-answer-box').innerHTML =
+          '<p style="margin-top:10px;"><b>第 2 步：</b>把下面的<b>应答码</b>发回给房主：</p>' +
+          '<textarea readonly style="width:100%;height:70px;font-size:.72rem;"></textarea>';
+        document.querySelector('#nl-answer-box textarea').value = ans;
+        setStatus('已生成应答码，发给房主后等待连接…');
+      }).catch(function (e) { setStatus('邀请码无效：' + e.message, false); });
+    });
+  });
+  function hostConfig() {
+    var chars = Object.keys(CHARACTERS).filter(function (k) { return CHARACTERS[k] && CHARACTERS[k].kind !== 'empty'; });
+    function opts(sel) {
+      return chars.map(function (k) {
+        return '<option value="' + k.replace(/"/g, '&quot;') + '"' + (k === sel ? ' selected' : '') + '>' + CHARACTERS[k].name + '</option>';
+      }).join('');
+    }
+    body.innerHTML =
+      '<p>✅ 连接成功！选择对局配置（会同步给对方）：</p>' +
+      '<p style="margin-top:8px;">我方（房主）角色：<select id="nl-me" style="width:100%;">' + opts(chars[0]) + '</select></p>' +
+      '<p style="margin-top:6px;">对方角色：<select id="nl-foe" style="width:100%;">' + opts(chars[chars.length - 1]) + '</select></p>' +
+      '<p style="margin-top:6px;">地图：<select id="nl-map" style="width:100%;">' +
+      ['32x32', '50x50', '64x64'].map(function (m) {
+        return '<option value="' + m + '"' + (m === '50x50' ? ' selected' : '') + '>' + m + '</option>';
+      }).join('') + '</select></p>' +
+      '<button class="menu-btn small" id="nl-start" style="margin-top:10px;">开始联机对局</button>';
+    document.getElementById('nl-start').addEventListener('click', function () {
+      var cfg = {
+        mode: 'online', role: 'host',
+        map: document.getElementById('nl-map').value,
+        player: document.getElementById('nl-me').value,
+        enemy: document.getElementById('nl-foe').value,
+        special: null, assists: [],
+        enemySpecial: null, enemyAssists: [],
+        difficulty: 'simple', ai: false
+      };
+      NETC.send({ t: 'config', cfg: cfg });
+      lobby.classList.add('hidden');
+      window.__bootBattle(cfg);
+    });
+  }
+  NETC.onConnected = function () {
+    setStatus('✅ 已连接！');
+    if (NETC.role === 'host') hostConfig();
+    else body.innerHTML = '<p>✅ 已连接！等待房主选择配置并开始对局…</p>';
+  };
+  NETC.onMessage = function (data) {
+    if (data.t === 'config') {
+      lobby.classList.add('hidden');
+      window.__bootBattle(data.cfg);
+    }
+  };
 })();

@@ -85,7 +85,24 @@
   <script src="data/maps.js"></script>
   <script src="data/skills.js"></script>
   <script src="data/ranges.js"></script>
+  <script src="net.js"></script>
   <script src="battle.js"></script>
+
+  <div class="modal-mask hidden" id="net-lobby" style="z-index:200;">
+    <div class="modal" style="width:min(560px,94vw);text-align:left;">
+      <h2 style="text-align:center;">🌐 互联网联机</h2>
+      <p class="muted" style="text-align:center;font-size:.86rem;">无需服务器：交换两段连接码即可直连（回合制实时同步）</p>
+      <div style="display:flex;gap:10px;justify-content:center;margin:12px 0;">
+        <button class="menu-btn small" id="nl-host">🧑‍💻 我是房主</button>
+        <button class="menu-btn small" id="nl-guest">🙋 我是加入方</button>
+      </div>
+      <div id="nl-body" style="font-size:.88rem;line-height:1.7;"></div>
+      <p id="nl-status" style="margin-top:10px;color:#a7e98c;min-height:1.4em;"></p>
+      <div style="text-align:center;margin-top:8px;">
+        <a class="menu-btn small" href="index.html">← 返回主菜单</a>
+      </div>
+    </div>
+  </div>
 
   <div class="modal-mask hidden" id="game-over">
     <div class="modal">
